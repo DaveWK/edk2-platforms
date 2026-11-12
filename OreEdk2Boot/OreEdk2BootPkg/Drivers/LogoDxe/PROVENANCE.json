@@ -1,0 +1,45 @@
+{
+  "module_sources": [
+    {
+      "file": "Logo.c",
+      "source_path": "Silicon/Spacemit/Drivers/LogoDxe/Logo.c",
+      "source_patch_commit": "0e2e76ac32e7aaf72705419fbb1999f77ebcda19",
+      "applied_commit": "c84fad553456fd4067f4f85d2a590b907e662f8b",
+      "pinned_platform_tree": "d8f4cecdb04000f93135b77d36031df81397a18a",
+      "sha256": "182fd07f6e02e032a76741eb4860ffdcd6f91fe9d911ee4973ac5d79d9703a82",
+      "license": "BSD-2-Clause-Patent",
+      "copy": "byte-identical; original Intel notices retained"
+    },
+    {
+      "file": "Logo.idf",
+      "source_path": "Silicon/Spacemit/Drivers/LogoDxe/Logo.idf",
+      "source_patch_commit": "0e2e76ac32e7aaf72705419fbb1999f77ebcda19",
+      "applied_commit": "c84fad553456fd4067f4f85d2a590b907e662f8b",
+      "pinned_platform_tree": "d8f4cecdb04000f93135b77d36031df81397a18a",
+      "sha256": "221984295e42357da39e26af5672c39483b97ccaebede64576c0f4602888e11b",
+      "license": "BSD-2-Clause-Patent",
+      "copy": "byte-identical; original Intel notices retained"
+    },
+    {
+      "file": "LogoDxe.inf",
+      "source_path": "Silicon/Spacemit/Drivers/LogoDxe/LogoDxe.inf",
+      "source_patch_commit": "0e2e76ac32e7aaf72705419fbb1999f77ebcda19",
+      "applied_commit": "c84fad553456fd4067f4f85d2a590b907e662f8b",
+      "pinned_platform_tree": "d8f4cecdb04000f93135b77d36031df81397a18a",
+      "sha256": "15c41788dbfffe73db534e9031b28ca8e982d4c24fac2b39e95381fa1aa2b7ad",
+      "license": "BSD-2-Clause-Patent",
+      "copy": "byte-identical; original Intel notices retained"
+    }
+  ],
+  "bitmap": {
+    "file": "Logo.bmp",
+    "source": "generate-logo.py (this directory; was ore-edk-boot-opi scripts/generate-logo.py)",
+    "license": "GPL-2.0-only",
+    "origin": "Original procedural unbranded geometric pattern; no imported bitmap, font, trademark or image source.",
+    "selected_board": "rv2 only; all existing RV2 variants",
+    "excluded_upstream_assets": [
+      "Silicon/Spacemit/Drivers/LogoDxe/Logo.bmp",
+      "Silicon/Spacemit/Drivers/LogoDxe/Logo.jpg"
+    ]
+  }
+}

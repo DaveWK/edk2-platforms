@@ -1,0 +1,66 @@
+## @file
+#  BoardSmbiosDxe - publishes SMBIOS Type 0/1/2/3/4/16/17/19/32 records from
+#  the board's PCDs (moved from the Radxa Cubie A7A SunxiSmbiosDxe). Without this the EDK2 Front
+#  Page falls back to the placeholder strings ("Wonder Computer Model
+#  1000Z..."). With it, model/CPU/memory in Setup reflect real hardware.
+#
+#  Derived from vehoelite/edk2-a733 @ 44aeea5. SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = BoardSmbiosDxe
+  FILE_GUID                      = 71554B62-9E18-4F5C-9E3A-31F8C2E7A101
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = BoardSmbiosEntryPoint
+
+[Sources]
+  BoardSmbiosDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  ArmPkg/ArmPkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+  OreEdk2BootPkg/OreEdk2BootPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  FdtLib
+  HobLib
+  MemoryAllocationLib
+  PcdLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Guids]
+  gFdtHobGuid                           ## CONSUMES ## HOB
+
+[Protocols]
+  gEfiSmbiosProtocolGuid                ## CONSUMES
+
+[FixedPcd]
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosMemoryBase
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosProcessorExternalClockMhz
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosProcessorCoreCount
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosMemoryWidth
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosMemoryType
+
+[Pcd]
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosManufacturer
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosProductName
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosVersion
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosFamily
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosProcessorManufacturer
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosProcessorVersion
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosProcessorPartNumber
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosMemoryPartNumber
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFirmwareVendor
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFirmwareVersionString
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFirmwareReleaseDateString
+
+[Depex]
+  gEfiSmbiosProtocolGuid

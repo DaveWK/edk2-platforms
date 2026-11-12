@@ -1,0 +1,40 @@
+## @file
+#  Radxa Cubie A7A ArmPlatformLib.
+#
+#  Derived from vehoelite/edk2-a733 @ 44aeea5 (OrangePi4ProLib.inf).
+#
+#  Copyright (c) 2026, radxa-a7a oreboot/EDK2 contributors.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION    = 0x0001001C
+  BASE_NAME      = OrebootArmPlatformLib
+  FILE_GUID      = 6C0E2D54-8F1A-4B37-A2D9-5E3F7B1C0A97
+  MODULE_TYPE    = BASE
+  VERSION_STRING = 0.1
+  LIBRARY_CLASS  = ArmPlatformLib
+
+[Sources]
+  OrebootArmPlatformLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  ArmPkg/ArmPkg.dec
+  ArmPlatformPkg/ArmPlatformPkg.dec
+  OreEdk2BootPkg/OreEdk2BootPkg.dec
+
+[LibraryClasses]
+  ArmLib
+  BaseMemoryLib
+  DebugLib
+  PcdLib
+
+[FixedPcd]
+  gOreEdk2BootTokenSpaceGuid.PcdArmPlatformDeviceRegionSize
+  gOreEdk2BootTokenSpaceGuid.PcdOrebootFwlogRegionBase
+  gOreEdk2BootTokenSpaceGuid.PcdOrebootFwlogRegionSize
+
+[Pcd]
+  gArmTokenSpaceGuid.PcdSystemMemoryBase
+  gArmTokenSpaceGuid.PcdSystemMemorySize

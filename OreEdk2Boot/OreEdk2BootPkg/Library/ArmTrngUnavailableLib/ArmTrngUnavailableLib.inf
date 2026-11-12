@@ -1,0 +1,16 @@
+## @file
+# Unavailable Arm firmware TRNG (for SoCs without an SMCCC TRNG service, e.g.
+# the A733 under oreboot), with callable unsupported paths.
+# SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = ArmTrngUnavailableLib
+  FILE_GUID = 2cb432ac-580a-4a68-8daf-31e4e29f7eb1
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = ArmTrngLib
+[Sources]
+  ArmTrngUnavailableLib.c
+[Packages]
+  MdePkg/MdePkg.dec

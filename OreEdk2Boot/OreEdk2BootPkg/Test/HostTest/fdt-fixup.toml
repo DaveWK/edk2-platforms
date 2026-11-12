@@ -1,0 +1,75 @@
+# Host test of FdtFixupApplyDxe's bounds (P0-K1EDK2-2), run from the
+# repository root:
+#   python3 tools/edk2-hosttest/run.py --root . edk2-common/OreEdk2BootPkg/Test/HostTest/fdt-fixup.toml
+# The real FdtFixupApplyDxe.c and MdePkg BaseFdtLib (FdtLib.c + its libfdt) on the
+# host shim.
+name = "oreedk2boot-fdt-fixup"
+defines = ['SHIM_CALLER_BASE_NAME="FdtFixupApplyDxe"']
+edk2 = "src/edk2"
+includes = [
+  "edk2-common/OreEdk2BootPkg/Test/HostTest",
+  "edk2-common/OreEdk2BootPkg/Test/HostTest/include",
+  "edk2-common/OreEdk2BootPkg/Include",
+  "src/edk2/MdePkg/Include",
+]
+preinclude = ["edk2-common/OreEdk2BootPkg/Test/HostTest/hosttest.h"]
+
+[[unit]]
+src = "edk2-common/OreEdk2BootPkg/Drivers/FdtFixupApplyDxe/FdtFixupApplyDxe.c"
+freestanding = true
+
+[[unit]]
+src = "src/edk2/MdePkg/Library/BaseFdtLib/FdtLib.c"
+freestanding = true
+flags = ["-Isrc/edk2/MdePkg/Library/BaseFdtLib", "-Isrc/edk2/MdePkg/Library/BaseFdtLib/libfdt/libfdt"]
+
+[[unit]]
+src = "src/edk2/MdePkg/Library/BaseFdtLib/libfdt/libfdt/fdt.c"
+freestanding = true
+flags = ["-Isrc/edk2/MdePkg/Library/BaseFdtLib", "-Isrc/edk2/MdePkg/Library/BaseFdtLib/libfdt/libfdt"]
+
+[[unit]]
+src = "src/edk2/MdePkg/Library/BaseFdtLib/libfdt/libfdt/fdt_ro.c"
+freestanding = true
+flags = ["-Isrc/edk2/MdePkg/Library/BaseFdtLib", "-Isrc/edk2/MdePkg/Library/BaseFdtLib/libfdt/libfdt"]
+
+[[unit]]
+src = "src/edk2/MdePkg/Library/BaseFdtLib/libfdt/libfdt/fdt_rw.c"
+freestanding = true
+flags = ["-Isrc/edk2/MdePkg/Library/BaseFdtLib", "-Isrc/edk2/MdePkg/Library/BaseFdtLib/libfdt/libfdt"]
+
+[[unit]]
+src = "src/edk2/MdePkg/Library/BaseFdtLib/libfdt/libfdt/fdt_sw.c"
+freestanding = true
+flags = ["-Isrc/edk2/MdePkg/Library/BaseFdtLib", "-Isrc/edk2/MdePkg/Library/BaseFdtLib/libfdt/libfdt"]
+
+[[unit]]
+src = "src/edk2/MdePkg/Library/BaseFdtLib/libfdt/libfdt/fdt_wip.c"
+freestanding = true
+flags = ["-Isrc/edk2/MdePkg/Library/BaseFdtLib", "-Isrc/edk2/MdePkg/Library/BaseFdtLib/libfdt/libfdt"]
+
+[[unit]]
+src = "src/edk2/MdePkg/Library/BaseFdtLib/libfdt/libfdt/fdt_strerror.c"
+freestanding = true
+flags = ["-Isrc/edk2/MdePkg/Library/BaseFdtLib", "-Isrc/edk2/MdePkg/Library/BaseFdtLib/libfdt/libfdt"]
+
+[[unit]]
+src = "src/edk2/MdePkg/Library/BaseFdtLib/libfdt/libfdt/fdt_empty_tree.c"
+freestanding = true
+flags = ["-Isrc/edk2/MdePkg/Library/BaseFdtLib", "-Isrc/edk2/MdePkg/Library/BaseFdtLib/libfdt/libfdt"]
+
+[[unit]]
+src = "src/edk2/MdePkg/Library/BaseFdtLib/libfdt/libfdt/fdt_addresses.c"
+freestanding = true
+flags = ["-Isrc/edk2/MdePkg/Library/BaseFdtLib", "-Isrc/edk2/MdePkg/Library/BaseFdtLib/libfdt/libfdt"]
+
+[[unit]]
+src = "src/edk2/MdePkg/Library/BaseFdtLib/libfdt/libfdt/fdt_check.c"
+freestanding = true
+flags = ["-Isrc/edk2/MdePkg/Library/BaseFdtLib", "-Isrc/edk2/MdePkg/Library/BaseFdtLib/libfdt/libfdt"]
+
+[[unit]]
+src = "edk2-common/OreEdk2BootPkg/Test/HostTest/hosttest-support.c"
+
+[[unit]]
+src = "edk2-common/OreEdk2BootPkg/Test/HostTest/fdt-fixup-main.c"

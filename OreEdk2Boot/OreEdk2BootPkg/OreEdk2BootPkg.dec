@@ -1,0 +1,136 @@
+## @file
+#  OreEdk2BootPkg: EDK2 libraries and drivers shared by the ore-edk2-boot
+#  boards (oreboot + EDK2): DT install and fixups, the oreboot firmware log
+#  console, the boot-order policy, table-driven SMBIOS, option-ROM denial,
+#  NOR flash identification, the logo and RISC-V/AArch64 helpers. Board
+#  specifics are the PCDs below, set in each board's DSC.
+#
+#  Copyright (c) 2026, ore-edk2-boot contributors.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  DEC_SPECIFICATION              = 0x0001001b
+  PACKAGE_NAME                   = OreEdk2BootPkg
+  PACKAGE_GUID                   = 0E7A2D5C-3B61-4F98-A4C2-6D1E9B70F3A5
+  PACKAGE_VERSION                = 0.1
+
+[Includes]
+  Include
+
+[Guids]
+  gOreEdk2BootTokenSpaceGuid = { 0x4b9e1f37, 0x82d0, 0x4c6a, { 0x9e, 0x35, 0x1a, 0x7c, 0xd2, 0x60, 0xb8, 0x41 } }
+  # FD file holding an optional built-in board DTB (-D DTB_FILE=<path>); the
+  # value the Cubie A7A used (gCubieA7ADtbFileGuid), so its FDF is unchanged.
+  gOreEdk2BootDtbFileGuid    = { 0x5c3f8a19, 0x2e64, 0x4b0d, { 0x8f, 0x71, 0x9a, 0x2c, 0x6e, 0x13, 0xd4, 0x58 } }
+
+[LibraryClasses]
+  ##  @libraryclass  The board's non-discoverable MMIO controllers.
+  NonDiscoverableDeviceTableLib|Include/Library/NonDiscoverableDeviceTableLib.h
+  ##  @libraryclass  EDID parsing and display mode choice.
+  EdidLib|Include/Library/EdidLib.h
+  ##  @libraryclass  Synopsys DesignWare HDMI TX.
+  DwHdmiLib|Include/Library/DwHdmiLib.h
+  ##  @libraryclass  A DesignWare PCIe link left up by oreboot.
+  DwPcieLib|Include/Library/DwPcieLib.h
+
+[Protocols]
+  # EFI_DT_FIXUP_PROTOCOL (https://github.com/U-Boot-EFI/EFI_DT_FIXUP_PROTOCOL),
+  # Include/Protocol/DtFixup.h.
+  gEfiFdtFixupProtocolGuid   = { 0xe617d64c, 0xfe08, 0x46da, { 0xf4, 0xdc, 0xbb, 0xd5, 0x87, 0x0c, 0x73, 0x00 } }
+
+[PcdsFixedAtBuild]
+  #
+  # oreboot interface (AArch64 boards: SiP SMC calls to oreboot main at EL3).
+  #
+  # SiP function returning the firmware log ring's base (0 / NOT_SUPPORTED:
+  # no log).
+  gOreEdk2BootTokenSpaceGuid.PcdOrebootFwlogSipFunction|0x82000002|UINT32|0x00000001
+  # SiP function that confirms a successful boot to oreboot (clears bt0's
+  # attempt marker and stops its watchdog).
+  gOreEdk2BootTokenSpaceGuid.PcdOrebootBootOkSipFunction|0x82000001|UINT32|0x00000002
+  # Firmware log ring (crates/bootlog): one area's size and the header magic
+  # (8 bytes, little-endian; "A7AFWLOG" = 0x474F4C5746413741).
+  gOreEdk2BootTokenSpaceGuid.PcdOrebootFwlogAreaSize|0x40000|UINT32|0x00000003
+  gOreEdk2BootTokenSpaceGuid.PcdOrebootFwlogMagic|0x474F4C5746413741|UINT64|0x00000004
+  # oreboot's firmware log region (both areas), mapped uncached by
+  # OrebootArmPlatformLib when DRAM handed to UEFI starts above it; size 0:
+  # none.
+  gOreEdk2BootTokenSpaceGuid.PcdOrebootFwlogRegionBase|0x0|UINT64|0x00000005
+  gOreEdk2BootTokenSpaceGuid.PcdOrebootFwlogRegionSize|0x0|UINT32|0x00000006
+
+  #
+  # AArch64 memory map (OrebootArmPlatformLib): the device window from 0
+  # up to this size (on the A7A, everything below DRAM at 0x40000000).
+  #
+  gOreEdk2BootTokenSpaceGuid.PcdArmPlatformDeviceRegionSize|0x40000000|UINT64|0x00000007
+
+  #
+  # DesignWare PCIe left up by oreboot (OrebootDwPcieLib, DwPciSegmentLib):
+  # the DT node oreboot publishes for a trained link (empty: none), the
+  # unrolled iATU offset from DBI and the SoC glue's link status register
+  # (offset from DBI) and its all-set mask. Defaults: the A733.
+  #
+  gOreEdk2BootTokenSpaceGuid.PcdDwPcieOrebootNodePath|""|VOID*|0x00000050
+  gOreEdk2BootTokenSpaceGuid.PcdDwPcieAtuOffset|0x300000|UINT32|0x00000051
+  gOreEdk2BootTokenSpaceGuid.PcdDwPcieLinkStatusOffset|0x400E0C|UINT32|0x00000052
+  gOreEdk2BootTokenSpaceGuid.PcdDwPcieLinkStatusMask|0x3|UINT32|0x00000053
+
+  #
+  # SMBIOS (BoardSmbiosDxe): numbers.
+  #
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosProcessorCoreCount|1|UINT8|0x00000010
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosProcessorExternalClockMhz|0|UINT16|0x00000011
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosMemoryWidth|32|UINT16|0x00000012
+  # SMBIOS Type 17 MemoryType (e.g. 0x23 LPDDR5, 0x1E LPDDR4).
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosMemoryType|0x02|UINT8|0x00000013
+  # Base of the physical DRAM array (Type 19), firmware carve-outs included.
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosMemoryBase|0x0|UINT64|0x00000014
+
+  #
+  # RISC-V SEC for OpenSBI fw_dynamic payloads (OpenSbiPlatformSecLib).
+  #
+  # Temporary RAM (stack and SEC handoff data) and the FV holding DXE core.
+  gOreEdk2BootTokenSpaceGuid.PcdSecTempRamBase|0x0|UINT32|0x00000040
+  gOreEdk2BootTokenSpaceGuid.PcdSecTempRamSize|0x0|UINT32|0x00000041
+  gOreEdk2BootTokenSpaceGuid.PcdSecFirmwareVolumeBase|0x0|UINT32|0x00000042
+  # Bytes of headroom SEC (OpenSbiPlatformSecLib, OrebootPlatformPeiLib)
+  # leaves in its copy of the DT for DXE's properties (totalsize is the
+  # page-rounded allocation, never grown in place).
+  gOreEdk2BootTokenSpaceGuid.PcdFdtReserveSize|0x1000|UINT32|0x00000043
+  # Compatible string of extra MMIO devices SEC describes as I/O resources
+  # (besides ns16550a); empty: none.
+  gOreEdk2BootTokenSpaceGuid.PcdSecMmioCompatible|""|VOID*|0x00000044
+
+[PcdsFixedAtBuild, PcdsPatchableInModule, PcdsDynamic, PcdsDynamicEx]
+  #
+  # Board identity.
+  #
+  # Banner line of the boot manager (CHAR16).
+  gOreEdk2BootTokenSpaceGuid.PcdBoardBannerString|L"oreboot + EDK2"|VOID*|0x00000020
+  # ESP path of the board DTB below \dtb\ or \dtbs\ (CHAR16, backslashes),
+  # e.g. L"allwinner\\sun60i-a733-cubie-a7a.dtb"; empty: only \board.dtb.
+  gOreEdk2BootTokenSpaceGuid.PcdBoardDtbPath|L""|VOID*|0x00000021
+  # DT path of the Ethernet node that takes oreboot's MAC address when the
+  # tree has no ethernet0 alias (CHAR8); empty: alias only.
+  gOreEdk2BootTokenSpaceGuid.PcdBoardEthernetPath|""|VOID*|0x00000022
+
+  #
+  # NonDiscoverableRegistrationDxe: register only the table entries named
+  # in this string-list property of this DT node (CHAR8; property empty:
+  # register all).
+  #
+  gOreEdk2BootTokenSpaceGuid.PcdNonDiscoverableReadyNode|"/firmware/oreboot"|VOID*|0x00000023
+  gOreEdk2BootTokenSpaceGuid.PcdNonDiscoverableReadyProperty|""|VOID*|0x00000024
+
+  #
+  # SMBIOS (BoardSmbiosDxe): strings (CHAR8).
+  #
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosManufacturer|"Unknown"|VOID*|0x00000030
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosProductName|"Unknown"|VOID*|0x00000031
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosVersion|"v1.0"|VOID*|0x00000032
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosFamily|"Unknown"|VOID*|0x00000033
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosProcessorManufacturer|"Unknown"|VOID*|0x00000034
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosProcessorVersion|"Unknown"|VOID*|0x00000035
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosProcessorPartNumber|"Unknown"|VOID*|0x00000036
+  gOreEdk2BootTokenSpaceGuid.PcdSmbiosMemoryPartNumber|"Unknown"|VOID*|0x00000037

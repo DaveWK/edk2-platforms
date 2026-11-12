@@ -1,0 +1,22 @@
+## @file
+#  An empty NonDiscoverableDeviceTableLib.
+#
+#  Copyright (c) 2026, ore-edk2-boot contributors.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 1.30
+  BASE_NAME                      = NonDiscoverableDeviceTableLibNull
+  FILE_GUID                      = 4C9E2B70-1D58-4A36-8F04-B7E3A15C9D82
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = NonDiscoverableDeviceTableLib
+
+[Sources]
+  NonDiscoverableDeviceTableLibNull.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  OreEdk2BootPkg/OreEdk2BootPkg.dec

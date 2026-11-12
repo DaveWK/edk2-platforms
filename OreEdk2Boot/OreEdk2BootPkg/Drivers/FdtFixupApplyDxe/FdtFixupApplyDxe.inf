@@ -1,0 +1,40 @@
+## @file
+#  Apply the board's device tree fixups (EFI_DT_FIXUP_PROTOCOL) to the DT
+#  configuration table at ReadyToBoot.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x0001001b
+  BASE_NAME                      = FdtFixupApplyDxe
+  FILE_GUID                      = 74BA9161-8495-401A-AC5A-B9E431F71E2A
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = FdtFixupApplyDxeEntry
+
+[Sources]
+  FdtFixupApplyDxe.c
+
+[Packages]
+  EmbeddedPkg/EmbeddedPkg.dec
+  MdePkg/MdePkg.dec
+  OreEdk2BootPkg/OreEdk2BootPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  FdtLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+
+[Guids]
+  gFdtTableGuid                 ## SOMETIMES_PRODUCES ## SystemTable
+
+[Protocols]
+  gEfiFdtFixupProtocolGuid      ## SOMETIMES_CONSUMES
+
+[Depex]
+  TRUE

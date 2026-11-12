@@ -1,0 +1,40 @@
+## @file
+#  SerialPortLib for an oreboot board's 16550-compatible UART that also
+#  appends to oreboot's firmware log ring in RAM (crates/bootlog format).
+#
+#  Copyright (c) 2026, radxa-a7a oreboot/EDK2 contributors.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION    = 0x00010006
+  BASE_NAME      = OrebootLogSerialPortLib
+  FILE_GUID      = 3B6E0C71-2A94-4D1F-9E58-A7A0F00D1061
+  MODULE_TYPE    = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS  = SerialPortLib
+
+[Sources]
+  OrebootLogSerialPortLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  OreEdk2BootPkg/OreEdk2BootPkg.dec
+
+[LibraryClasses]
+  ArmSmcLib
+  BaseLib
+  BaseMemoryLib
+  IoLib
+  PcdLib
+
+[Pcd]
+  gEfiMdeModulePkgTokenSpaceGuid.PcdSerialRegisterBase
+  gEfiMdeModulePkgTokenSpaceGuid.PcdSerialRegisterStride
+  gEfiMdePkgTokenSpaceGuid.PcdUartDefaultBaudRate
+
+[FixedPcd]
+  gOreEdk2BootTokenSpaceGuid.PcdOrebootFwlogSipFunction
+  gOreEdk2BootTokenSpaceGuid.PcdOrebootFwlogAreaSize
+  gOreEdk2BootTokenSpaceGuid.PcdOrebootFwlogMagic

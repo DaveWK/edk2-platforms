@@ -1,0 +1,37 @@
+## @file
+#  DwPcieLib: a DesignWare PCIe link as oreboot main describes it in its DTB.
+#
+#  Copyright (c) 2026, radxa-a7a oreboot/EDK2 contributors.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION    = 0x00010006
+  BASE_NAME      = OrebootDwPcieLib
+  FILE_GUID      = 3C1E7A52-9B64-4F0D-A733-5C1E0DB0A7A3
+  MODULE_TYPE    = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS  = DwPcieLib
+
+[Sources]
+  OrebootDwPcieLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+  OreEdk2BootPkg/OreEdk2BootPkg.dec
+
+[LibraryClasses]
+  DebugLib
+  FdtLib
+  HobLib
+  IoLib
+  PcdLib
+
+[Guids]
+  gFdtHobGuid                   ## CONSUMES ## HOB
+
+[FixedPcd]
+  gOreEdk2BootTokenSpaceGuid.PcdDwPcieOrebootNodePath
+  gOreEdk2BootTokenSpaceGuid.PcdDwPcieLinkStatusOffset
+  gOreEdk2BootTokenSpaceGuid.PcdDwPcieLinkStatusMask

@@ -1,0 +1,69 @@
+## @file
+#  PlatformSecLib for a RISC-V board whose OpenSBI fw_dynamic starts EDK2 with
+#  a0 = boot hart, a1 = DT (the K1 boards): SEC handoff data for
+#  CpuDxeRiscV64, the FDT HOB for FdtClientDxe, memory HOBs from the DT.
+#  From OvmfPkg/RiscVVirt/Library/PlatformSecLib (edk2 0d61209231); see
+#  Platform.c for the differences.
+#
+#  Copyright (c) 2013 - 2015, Intel Corporation. All rights reserved.<BR>
+#  Copyright (c) 2025, Ventana Micro Systems Inc. All rights reserved.<BR>
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+#
+##
+
+[Defines]
+  INF_VERSION                    = 1.30
+  BASE_NAME                      = OpenSbiPlatformSecLib
+  FILE_GUID                      = 6A1D9C42-5E07-4B3F-8C21-0F4E7B9A2D63
+  MODULE_TYPE                    = SEC
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = PlatformSecLib
+
+[Sources]
+  Cpu.c
+  Memory.c
+  Platform.c
+  PlatformSecLib.c
+  SecEntry.S
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  CpuExceptionHandlerLib
+  CpuLib
+  DebugLib
+  FdtLib
+  RiscVSbiLib
+  HobLib
+  StackCheckLib
+  PcdLib
+  PrePiLib
+
+[Packages]
+  EmbeddedPkg/EmbeddedPkg.dec
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  UefiCpuPkg/UefiCpuPkg.dec
+  OreEdk2BootPkg/OreEdk2BootPkg.dec
+
+[Pcd]
+  gOreEdk2BootTokenSpaceGuid.PcdSecTempRamBase
+  gOreEdk2BootTokenSpaceGuid.PcdSecTempRamSize
+  gOreEdk2BootTokenSpaceGuid.PcdSecFirmwareVolumeBase
+  gEmbeddedTokenSpaceGuid.PcdMemoryTypeEfiACPIReclaimMemory
+  gEmbeddedTokenSpaceGuid.PcdMemoryTypeEfiACPIMemoryNVS
+  gEmbeddedTokenSpaceGuid.PcdMemoryTypeEfiReservedMemoryType
+  gEmbeddedTokenSpaceGuid.PcdMemoryTypeEfiRuntimeServicesData
+  gEmbeddedTokenSpaceGuid.PcdMemoryTypeEfiRuntimeServicesCode
+
+[FixedPcd]
+  gOreEdk2BootTokenSpaceGuid.PcdFdtReserveSize
+  gOreEdk2BootTokenSpaceGuid.PcdSecMmioCompatible
+
+[Ppis]
+  gEfiSecHobDataPpiGuid
+
+[Guids]
+  gFdtHobGuid
+  gEfiMemoryTypeInformationGuid

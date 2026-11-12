@@ -1,0 +1,61 @@
+## @file
+#  Synopsys DesignWare Ethernet Quality-of-Service (EQoS) UEFI SNP driver
+#
+#  Copyright (c) 2025, Mario Bălănică <mariobalanica02@gmail.com>
+#
+#  From edk2-porting/edk2-rk3588 (edk2-rockchip @ 824e6c12). Changes for the
+#  Cubie A7A: accepts Synopsys version 0x53 and takes the link state from the
+#  platform protocol's optional GetLinkState; reprograms the link speed after
+#  each software reset.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+#
+##
+
+[Defines]
+  INF_VERSION                    = 0x0001001B
+  BASE_NAME                      = DwcEqosSnpDxe
+  FILE_GUID                      = b22ae92e-5461-411d-96a2-82b103249958
+  MODULE_TYPE                    = UEFI_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = EqosEntryPoint
+  UNLOAD_IMAGE                   = EqosUnload
+
+[Sources]
+  AdapterInfo.c
+  ComponentName.c
+  DwcEqosSnpDxe.c
+  EqosUtil.c
+  SimpleNetwork.c
+
+[Packages]
+  EmbeddedPkg/EmbeddedPkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  MdePkg/MdePkg.dec
+  NetworkPkg/NetworkPkg.dec
+  DesignWarePkg/DesignWarePkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  DmaLib
+  IoLib
+  MemoryAllocationLib
+  NetLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+
+[Protocols]
+  gDwcEqosPlatformDeviceProtocolGuid          ## TO_START
+  gEfiAdapterInformationProtocolGuid          ## BY_START
+  gEfiSimpleNetworkProtocolGuid               ## BY_START
+
+[Guids]
+  gEfiAdapterInfoMediaStateGuid
+  gEfiEventExitBootServicesGuid
+
+[FixedPcd]
+  gEmbeddedTokenSpaceGuid.PcdDmaDeviceOffset
+  gEmbeddedTokenSpaceGuid.PcdDmaDeviceLimit

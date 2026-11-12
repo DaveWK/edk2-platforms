@@ -1,0 +1,27 @@
+## @file
+#  Refuse to load UEFI images from PCI option ROMs (NULL library for
+#  SecurityStubDxe).
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x0001001b
+  BASE_NAME                      = PciOptionRomDenyLib
+  FILE_GUID                      = 8B1E6F43-2C7A-4D95-B0E3-5A9F17C4D262
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = NULL|DXE_DRIVER
+  CONSTRUCTOR                    = PciOptionRomDenyLibConstructor
+
+[Sources]
+  PciOptionRomDenyLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+
+[LibraryClasses]
+  DebugLib
+  DevicePathLib
+  SecurityManagementLib

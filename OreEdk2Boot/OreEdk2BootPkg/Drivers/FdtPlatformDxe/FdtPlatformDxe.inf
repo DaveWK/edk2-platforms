@@ -1,0 +1,57 @@
+## @file
+#  Installs the OS devicetree for an oreboot (AArch64, EL3 main) board.
+#
+#  Copyright (c) 2026, radxa-a7a oreboot/EDK2 contributors.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION    = 0x0001001C
+  BASE_NAME      = FdtPlatformDxe
+  FILE_GUID      = 8E1B5C2A-4F07-4D93-A6E2-1C9D3B7F5A60
+  MODULE_TYPE    = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT    = FdtPlatformDxeInitialize
+
+[Sources]
+  FdtPlatformDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+  OreEdk2BootPkg/OreEdk2BootPkg.dec
+
+[LibraryClasses]
+  ArmSmcLib
+  BaseMemoryLib
+  DebugLib
+  DxeServicesLib
+  FdtLib
+  HobLib
+  MemoryAllocationLib
+  PcdLib
+  PrintLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+
+[Guids]
+  gEfiFileInfoGuid
+  gFdtHobGuid
+  gFdtTableGuid
+  gOreEdk2BootDtbFileGuid
+
+[Pcd]
+  gOreEdk2BootTokenSpaceGuid.PcdBoardDtbPath
+  gOreEdk2BootTokenSpaceGuid.PcdBoardEthernetPath
+
+[FixedPcd]
+  gOreEdk2BootTokenSpaceGuid.PcdOrebootFwlogSipFunction
+  gOreEdk2BootTokenSpaceGuid.PcdOrebootFwlogAreaSize
+
+[Protocols]
+  gEfiSimpleFileSystemProtocolGuid
+
+[Depex]
+  TRUE

@@ -1,0 +1,33 @@
+## @file
+#  PCI Segment Library for a DesignWare PCIe root complex (DwPcieLib):
+#  config cycles through an iATU region retargeted per access.
+#
+#  Copyright (c) 2016 - 2018, Intel Corporation. All rights reserved.<BR>
+#  Copyright (c) 2026, radxa-a7a oreboot/EDK2 contributors.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION    = 0x00010006
+  BASE_NAME      = DwPciSegmentLib
+  FILE_GUID      = 9E0B4C21-7D3A-4F58-A733-0C5E61B2A7A1
+  MODULE_TYPE    = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS  = PciSegmentLib
+
+[Sources]
+  PciSegmentLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  OreEdk2BootPkg/OreEdk2BootPkg.dec
+
+[LibraryClasses]
+  DwPcieLib
+  PcdLib
+  BaseLib
+  DebugLib
+  IoLib
+
+[FixedPcd]
+  gOreEdk2BootTokenSpaceGuid.PcdDwPcieAtuOffset

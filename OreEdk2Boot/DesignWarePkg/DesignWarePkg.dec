@@ -1,0 +1,27 @@
+## @file
+#  Synopsys DesignWare IP drivers shared by the ore-edk2-boot boards.
+#
+#  Derived from edk2-porting/edk2-rk3588 (edk2-rockchip @ 824e6c12)
+#  Silicon/Synopsys/DesignWare/DesignWarePkg.dec; only the EQoS Ethernet
+#  pieces are carried, and the platform protocol has a new GUID (see
+#  Include/Protocol/DwcEqosPlatformDevice.h).
+#
+#  Copyright (c) 2007-2021, Intel Corporation. All rights reserved.
+#  Copyright (c) 2012-2014, ARM Ltd. All rights reserved.
+#  Copyright (c) 2018, Linaro. All rights reserved.
+#  Copyright (c) 2026, radxa-a7a oreboot/EDK2 contributors.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  DEC_SPECIFICATION              = 0x00010019
+  PACKAGE_NAME                   = DesignWarePkg
+  PACKAGE_GUID                   = 36a7fa33-7843-4e05-afc6-0d943660f47d
+  PACKAGE_VERSION                = 0.1
+
+[Includes]
+  Include
+
+[Protocols.common]
+  gDwcEqosPlatformDeviceProtocolGuid = { 0x734fd3dd, 0xe30d, 0x4ee4, { 0xbc, 0x8e, 0x83, 0xfc, 0xc0, 0xa1, 0xc5, 0x85 } }

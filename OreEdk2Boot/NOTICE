@@ -1,0 +1,61 @@
+OreEdk2Boot: EDK2 packages shared by the oreboot + EDK2 SBC ports
+==================================================================
+
+License: BSD-2-Clause-Patent (same as upstream TianoCore EDK2), per file
+headers. Add this directory to PACKAGES_PATH (after edk2 and
+edk2-platforms) to build a board that uses these packages.
+
+DesignWarePkg/
+  From edk2-porting/edk2-rk3588, edk2-rockchip submodule at commit
+  824e6c12168a51cf72470fb43da60642e835198f (https://github.com/edk2-porting/edk2-rk3588),
+  BSD-2-Clause-Patent (Copyright (c) 2025 Mario Bălănică, (c) 2022 Jared McNeill):
+    DesignWarePkg.dec               <- Silicon/Synopsys/DesignWare/DesignWarePkg.dec
+                                       (EQoS protocol only, new package GUID)
+    Include/Protocol/DwcEqosPlatformDevice.h
+                                    <- same path (adds GetLinkState, new GUID)
+    Drivers/DwcEqosSnpDxe/          <- same path (accepts Synopsys version 0x53, link
+                                       state from GetLinkState, link speed reprogrammed
+                                       after each MAC reset; new FILE_GUID)
+
+OreEdk2BootPkg/
+  From vehoelite/edk2-a733 at commit 44aeea539549e44d8f78922e3ba8c7682b084292
+  (https://github.com/vehoelite/edk2-a733), BSD-2-Clause-Patent, via the Radxa
+  Cubie A7A port (Platform/Radxa/CubieA7APkg):
+    Library/PlatformBootManagerLib/ <- OrangePi4ProPkg/Library/PlatformBootManagerLib
+                                       (BootDebian/logo removed, firmware-DTB fallback
+                                       added; banner and oreboot SiP call now PCDs)
+    Drivers/BoardSmbiosDxe/         <- OrangePi4ProPkg/Drivers/SunxiSmbiosDxe
+                                       (board strings, memory size from HOBs; all board
+                                       data now PCDs)
+    Library/OrebootArmPlatformLib/  <- OrangePi4ProPkg/Library/OrangePi4ProLib, via the
+                                       A7A's CubieA7ALib (DRAM map from the DT; device
+                                       window and firmware log region now PCDs)
+    Drivers/NonDiscoverableRegistrationDxe/
+                                    <- OrangePi4ProPkg/Drivers/SunxiUsbDxe (the
+                                       controller table is the board's
+                                       NonDiscoverableDeviceTableLib)
+  From edk2-porting/edk2-rk3588 (Rk3588PciSegmentLib, PciHostBridgeLib; Mario
+  Bălănică, Molly Sophia, Jared McNeill, Intel, Linaro; BSD-2-Clause-Patent),
+  via the Cubie A7A's A733Pkg:
+    Library/DwPciSegmentLib/, Library/DwPciHostBridgeLib/ (PCI segment
+    accessors and ResourceConflict()); Library/OrebootDwPcieLib/ and
+    Include/Library/DwPcieLib.h are new.
+  From upstream TianoCore EDK2 (edk2 0d61209231, BSD-2-Clause-Patent):
+    Library/OpenSbiPlatformSecLib/  <- OvmfPkg/RiscVVirt/Library/PlatformSecLib
+                                       (QEMU probes dropped, honest-capacity DT copy)
+    TestPlatform/RiscV64Test.*, Rules.fdf.inc
+                                    <- OvmfPkg/RiscVVirt/RiscVVirtQemu.dsc/.fdf
+    Library/NorFlashInfoLib/        <- EmbeddedPkg NorFlashInfoLib (Marvell/StarFive,
+                                       BSD-2-Clause-Patent), plus the XMC flash of the
+                                       Orange Pi RV2
+    Drivers/LogoDxe/                <- Intel BSD-2-Clause-Patent logo driver; the
+                                       bitmap is a procedural pattern from
+                                       generate-logo.py (GPL-2.0-only), see
+                                       PROVENANCE.json
+  Written for these SBC ports: Library/ArmTrngUnavailableLib/,
+    Library/OrebootLogSerialPortLib/, Library/OrebootPlatformPeiLib/,
+    Library/EdidLib/, Library/DwHdmiLib/, Drivers/FdtPlatformDxe/,
+    Drivers/PlatformHasDeviceTreeDxe/, Drivers/BareSatpOnExitDxe/,
+    Drivers/FdtFixupApplyDxe/, Include/Protocol/UBootDtFixup.h,
+    Library/PciOptionRomDenyLib/, Library/NonDiscoverableDeviceTableLibNull/,
+    TestPlatform/AArch64Test.*, Test/HostTest/.

@@ -1,0 +1,46 @@
+## @file
+#  PlatformPeiLib for oreboot + EDK2 AArch64 boards: FV HOB plus a HOB with
+#  oreboot's DTB (moved from the Radxa Cubie A7A).
+#
+#  Copyright (c) 2026, radxa-a7a oreboot/EDK2 contributors.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION    = 0x0001001C
+  BASE_NAME      = OrebootPlatformPeiLib
+  FILE_GUID      = 3B7C9E10-6A42-4D85-B1F3-8E2D0C5A7F14
+  MODULE_TYPE    = SEC
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS  = PlatformPeiLib
+
+[Sources]
+  OrebootPlatformPeiLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+  ArmPkg/ArmPkg.dec
+  OvmfPkg/OvmfPkg.dec
+  OreEdk2BootPkg/OreEdk2BootPkg.dec
+
+[LibraryClasses]
+  DebugLib
+  FdtLib
+  HobLib
+  MemoryAllocationLib
+  PcdLib
+
+[FixedPcd]
+  gOreEdk2BootTokenSpaceGuid.PcdFdtReserveSize
+  gArmTokenSpaceGuid.PcdFvBaseAddress
+  gArmTokenSpaceGuid.PcdFvSize
+
+[Pcd]
+  gArmTokenSpaceGuid.PcdSystemMemoryBase
+  gArmTokenSpaceGuid.PcdSystemMemorySize
+  gUefiOvmfPkgTokenSpaceGuid.PcdDeviceTreeInitialBaseAddress
+
+[Guids]
+  gFdtHobGuid

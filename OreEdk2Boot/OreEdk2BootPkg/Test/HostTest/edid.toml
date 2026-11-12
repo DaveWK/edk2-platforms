@@ -1,0 +1,21 @@
+# Host test of EdidLib (P0-K1EDK2-3), run from the repository root:
+#   python3 tools/edk2-hosttest/run.py --root . edk2-common/OreEdk2BootPkg/Test/HostTest/edid.toml
+name = "oreedk2boot-edid"
+edk2 = "src/edk2"
+includes = [
+  "edk2-common/OreEdk2BootPkg/Test/HostTest",
+  "edk2-common/OreEdk2BootPkg/Test/HostTest/include",
+  "edk2-common/OreEdk2BootPkg/Include",
+  "src/edk2/MdePkg/Include",
+]
+preinclude = ["edk2-common/OreEdk2BootPkg/Test/HostTest/hosttest.h"]
+
+[[unit]]
+src = "edk2-common/OreEdk2BootPkg/Library/EdidLib/EdidLib.c"
+freestanding = true
+
+[[unit]]
+src = "edk2-common/OreEdk2BootPkg/Test/HostTest/hosttest-support.c"
+
+[[unit]]
+src = "edk2-common/OreEdk2BootPkg/Test/HostTest/edid-main.c"
