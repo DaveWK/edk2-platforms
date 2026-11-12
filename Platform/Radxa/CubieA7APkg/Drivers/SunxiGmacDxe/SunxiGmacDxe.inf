@@ -1,0 +1,45 @@
+## @file
+#  Registers the Cubie A7A's GMAC0 (brought up by oreboot main) with
+#  DwcEqosSnpDxe, and reports its link state from the PHY over MDIO.
+#
+#  Copyright (c) 2026, radxa-a7a oreboot/EDK2 contributors.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION    = 0x0001001C
+  BASE_NAME      = SunxiGmacDxe
+  FILE_GUID      = 5d2c375b-0ee1-413c-a719-8a23f5f34c23
+  MODULE_TYPE    = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT    = SunxiGmacDxeInitialize
+
+[Sources]
+  SunxiGmacDxe.c
+
+[Packages]
+  EmbeddedPkg/EmbeddedPkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  MdePkg/MdePkg.dec
+  NetworkPkg/NetworkPkg.dec
+  DesignWarePkg/DesignWarePkg.dec
+
+[LibraryClasses]
+  BaseMemoryLib
+  DebugLib
+  FdtLib
+  HobLib
+  IoLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Protocols]
+  gDwcEqosPlatformDeviceProtocolGuid    ## PRODUCES
+  gEfiDevicePathProtocolGuid            ## PRODUCES
+
+[Guids]
+  gFdtHobGuid                           ## CONSUMES
+
+[Depex]
+  TRUE

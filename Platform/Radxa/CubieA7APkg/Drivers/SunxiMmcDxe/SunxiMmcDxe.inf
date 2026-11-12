@@ -1,0 +1,56 @@
+## @file
+#  SunxiMmcDxe -- EFI_BLOCK_IO for the Cubie A7A microSD slot (A733 SMHC0).
+#
+#  Initialises the controller and the card itself (no reliance on a previous
+#  boot stage), raises the clock to 25/50 MHz when a read-back check passes,
+#  and serves PIO block reads and verified writes. Publishes the raw window
+#  of the UEFI variable store (SdVarStoreFvbDxe) when the build reserves one.
+#
+#  Derived from vehoelite/edk2-a733 @ 44aeea5 (OrangePi4ProPkg SunxiMmcDxe).
+#
+#  Copyright (c) 2026, carpi-os contributors.
+#  Copyright (c) 2026, radxa-a7a oreboot/EDK2 contributors.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION    = 0x00010006
+  BASE_NAME      = SunxiMmcDxe
+  FILE_GUID      = 4F3A2B1C-6D5E-4C7A-9B8F-2E1D0C3A4B5D
+  MODULE_TYPE    = DXE_DRIVER
+  VERSION_STRING = 2.0
+  ENTRY_POINT    = SunxiMmcDxeEntry
+
+[Sources]
+  SunxiMmcDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  Platform/Radxa/CubieA7APkg/CubieA7APkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  DevicePathLib
+  IoLib
+  MemoryAllocationLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+
+[Protocols]
+  gEfiBlockIoProtocolGuid             ## PRODUCES
+  gEfiDevicePathProtocolGuid          ## PRODUCES
+  gCubieA7ASdVarStoreIoProtocolGuid   ## SOMETIMES_PRODUCES
+
+[Depex]
+  gEfiTimerArchProtocolGuid
+
+[FixedPcd]
+  gCubieA7ATokenSpaceGuid.PcdSdWriteEnable
+  gCubieA7ATokenSpaceGuid.PcdSdWriteProtectBelowLba
+  gCubieA7ATokenSpaceGuid.PcdSdVarStoreLba
+  gCubieA7ATokenSpaceGuid.PcdSdVarStoreBlocks

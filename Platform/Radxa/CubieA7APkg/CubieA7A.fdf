@@ -1,0 +1,330 @@
+## @file
+#  Radxa Cubie A7A (Allwinner A733) flash description.
+#
+#  The FD is not flashed anywhere: oreboot bt0 copies it from the SD card into
+#  DRAM at 0x41000000 and oreboot main enters it at EL2 with x0 = DTB.
+#
+#  Derived from vehoelite/edk2-a733 @ 44aeea5 (OrangePi4Pro.fdf). The entry
+#  trampoline no longer needs post-build patching: code1 branches to the start
+#  of FVMAIN_COMPACT, whose reset vector GenFv itself points at the PrePi
+#  (SEC) entry point, exactly as ArmVirtQemuKernel.fdf does it.
+#
+#  Copyright (c) 2026, carpi-os contributors.
+#  Copyright (c) 2026, radxa-a7a oreboot/EDK2 contributors.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[FD.CUBIEA7A_EFI]
+  BaseAddress   = 0x41000000|gArmTokenSpaceGuid.PcdFdBaseAddress
+  Size          = 0x00400000|gArmTokenSpaceGuid.PcdFdSize   # 4 MB
+  ErasePolarity = 1
+  BlockSize     = 0x00001000          # 4 KB
+  NumBlocks     = 0x0400
+
+  #
+  # arm64 Linux-style image header at FD offset 0. oreboot main jumps here.
+  #   code0: adr x1, .   -> x1 = runtime FD base (for the relocatable PrePi)
+  #   code1: b   0x40000 -> FVMAIN_COMPACT, whose first word GenFv rewrites to
+  #                         'b _ModuleEntryPoint'
+  # text_offset 0 with flags bit 3 lets U-Boot's booti run it in place from
+  # any 2 MiB-aligned address, so the vendor U-Boot can chainload it from
+  # 0x41000000 for testing (README). The PCDs still assume 0x41000000.
+  # PrePi checks the "ARMd" magic at +0x38 before trusting x0 as a DTB, then
+  # copies that DTB to +0x40; the 256 KB region leaves room for a DTB of up to
+  # ~255 KB.
+  #
+  0x00000000|0x00040000
+  DATA = {
+    0x01, 0x00, 0x00, 0x10,                         # code0: adr x1, .
+    0xff, 0xff, 0x00, 0x14,                         # code1: b 0x40000
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, # text_offset: 0
+    0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, # image_size: 4 MB
+    0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, # flags: any 2 MB-aligned base
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, # res2
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, # res3
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, # res4
+    0x41, 0x52, 0x4d, 0x64,                         # magic: "ARMd"
+    0x00, 0x00, 0x00, 0x00                          # res5
+  }
+
+  0x00040000|0x00280000
+  gArmTokenSpaceGuid.PcdFvBaseAddress|gArmTokenSpaceGuid.PcdFvSize
+  FV = FVMAIN_COMPACT
+
+  # NV variable store: one FV of variable store (0x40000), FTW working
+  # (0x2000) and FTW spare (0x40000) per the DSC PCDs, at 0x412C0000. The FD
+  # carries it formatted and empty, as ArmVirtPkg's VarStore.fdf.inc does:
+  # with SD_VARSTORE_ENABLE, VariableRuntimeDxe reads this memory directly at
+  # its entry, and a blank region there is "Volume Corrupt" and an ASSERT.
+  # SdVarStoreFvbDxe rewrites the same bytes (FormatFv, FormatFtwWorking)
+  # before it lets the variable driver start, and loads the store from the
+  # microSD window over them when the card holds a valid one. Without
+  # SD_VARSTORE_ENABLE the variable driver emulates the store in RAM and
+  # never reads this. scripts/check-nvstore.py checks these bytes in every
+  # built FD; keep the two in step.
+  #
+  0x002C0000|0x00040000               # NV_VARIABLE_STORE
+  DATA = {
+    ## EFI_FIRMWARE_VOLUME_HEADER
+    # ZeroVector
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    # FileSystemGuid: gEfiSystemNvDataFvGuid
+    0x8d, 0x2b, 0xf1, 0xff, 0x96, 0x76, 0x8b, 0x4c,
+    0xa9, 0x85, 0x27, 0x47, 0x07, 0x5b, 0x4f, 0x50,
+    # FvLength: 0x82000 (store + FTW working + FTW spare)
+    0x00, 0x20, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00,
+    # Signature "_FVH", Attributes 0x00000e36 (read/write enabled and on,
+    # sticky write, memory mapped, erase polarity 1: as FormatFv)
+    0x5f, 0x46, 0x56, 0x48, 0x36, 0x0e, 0x00, 0x00,
+    # HeaderLength 0x48, Checksum 0xc97e, ExtHeaderOffset 0, Reserved 0,
+    # Revision 2
+    0x48, 0x00, 0x7e, 0xc9, 0x00, 0x00, 0x00, 0x02,
+    # BlockMap[0]: 0x82 blocks of 0x1000; BlockMap[1]: terminator
+    0x82, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ## VARIABLE_STORE_HEADER
+    # Signature: gEfiAuthenticatedVariableGuid
+    0x78, 0x2c, 0xf3, 0xaa, 0x7b, 0x94, 0x9a, 0x43,
+    0xa1, 0x80, 0x2e, 0x14, 0x4e, 0xc3, 0x77, 0x92,
+    # Size 0x3ffb8 (0x40000 - 0x48), Format 0x5a (formatted),
+    # State 0xfe (healthy), Reserved 0, Reserved1 0
+    0xb8, 0xff, 0x03, 0x00, 0x5a, 0xfe, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00
+  }
+
+  0x00300000|0x00002000               # NV_FTW_WORKING
+  DATA = {
+    ## EFI_FAULT_TOLERANT_WORKING_BLOCK_HEADER
+    # Signature: gEdkiiWorkingBlockSignatureGuid
+    0x2b, 0x29, 0x58, 0x9e, 0x68, 0x7c, 0x7d, 0x49,
+    0xa0, 0xce, 0x65, 0x00, 0xfd, 0x9f, 0x1b, 0x95,
+    # Crc 0x03f233e2, WorkingBlockValid 0 / WorkingBlockInvalid 1, Reserved
+    0xe2, 0x33, 0xf2, 0x03, 0xfe, 0xff, 0xff, 0xff,
+    # WriteQueueSize: 0x1fe0 (0x2000 - 0x20)
+    0xe0, 0x1f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+  }
+
+  0x00302000|0x000FE000               # NV_FTW_SPARE (erased; 0x40000 used)
+
+################################################################################
+[FV.FVMAIN_COMPACT]
+  FvAlignment        = 16
+  ERASE_POLARITY     = 1
+  MEMORY_MAPPED      = TRUE
+  STICKY_WRITE       = TRUE
+  LOCK_CAP           = TRUE
+  LOCK_STATUS        = TRUE
+  WRITE_DISABLED_CAP = TRUE
+  WRITE_ENABLED_CAP  = TRUE
+  WRITE_STATUS       = TRUE
+  WRITE_LOCK_CAP     = TRUE
+  WRITE_LOCK_STATUS  = TRUE
+  READ_DISABLED_CAP  = TRUE
+  READ_ENABLED_CAP   = TRUE
+  READ_STATUS        = TRUE
+  READ_LOCK_CAP      = TRUE
+  READ_LOCK_STATUS   = TRUE
+
+  INF  RuleOverride=SELF_RELOC ArmVirtPkg/PrePi/ArmVirtPrePiUniCoreRelocatable.inf
+
+  FILE FV_IMAGE = 9E21FD93-9C72-4c15-8C4B-E77F1DB2D792 {
+    SECTION GUIDED EE4E5898-3914-4259-9D6E-DC7BD79403CF PROCESSING_REQUIRED = TRUE {
+      SECTION FV_IMAGE = FVMAIN
+    }
+  }
+
+################################################################################
+[FV.FVMAIN]
+  FvAlignment        = 16
+  ERASE_POLARITY     = 1
+  MEMORY_MAPPED      = TRUE
+  STICKY_WRITE       = TRUE
+  LOCK_CAP           = TRUE
+  LOCK_STATUS        = TRUE
+  WRITE_DISABLED_CAP = TRUE
+  WRITE_ENABLED_CAP  = TRUE
+  WRITE_STATUS       = TRUE
+  WRITE_LOCK_CAP     = TRUE
+  WRITE_LOCK_STATUS  = TRUE
+  READ_DISABLED_CAP  = TRUE
+  READ_ENABLED_CAP   = TRUE
+  READ_STATUS        = TRUE
+  READ_LOCK_CAP      = TRUE
+  READ_LOCK_STATUS   = TRUE
+
+  #
+  # DXE core + architectural protocols
+  #
+  INF  MdeModulePkg/Core/Dxe/DxeMain.inf
+  INF  MdeModulePkg/Universal/PCD/Dxe/Pcd.inf
+
+  INF  MdeModulePkg/Universal/SecurityStubDxe/SecurityStubDxe.inf
+  INF  MdeModulePkg/Universal/Metronome/Metronome.inf
+  INF  MdeModulePkg/Universal/CapsuleRuntimeDxe/CapsuleRuntimeDxe.inf
+
+  INF  ArmPkg/Drivers/CpuDxe/CpuDxe.inf
+  INF  ArmPkg/Drivers/ArmGicDxe/ArmGicDxe.inf
+  INF  ArmPkg/Drivers/TimerDxe/TimerDxe.inf
+  INF  MdeModulePkg/Universal/WatchdogTimerDxe/WatchdogTimer.inf
+
+  INF  MdeModulePkg/Core/RuntimeDxe/RuntimeDxe.inf
+  INF  MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
+  INF  MdeModulePkg/Universal/MonotonicCounterRuntimeDxe/MonotonicCounterRuntimeDxe.inf
+  INF  MdeModulePkg/Universal/ResetSystemRuntimeDxe/ResetSystemRuntimeDxe.inf
+  INF  EmbeddedPkg/RealTimeClockRuntimeDxe/RealTimeClockRuntimeDxe.inf
+  INF  Platform/Radxa/CubieA7APkg/Drivers/RtPropertiesDxe/RtPropertiesDxe.inf
+
+  #
+  # Console
+  #
+  INF  MdeModulePkg/Universal/Console/ConPlatformDxe/ConPlatformDxe.inf
+  INF  MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterDxe.inf
+  INF  MdeModulePkg/Universal/Console/TerminalDxe/TerminalDxe.inf
+  INF  MdeModulePkg/Universal/Console/GraphicsConsoleDxe/GraphicsConsoleDxe.inf
+  INF  MdeModulePkg/Universal/SerialDxe/SerialDxe.inf
+
+  #
+  # Storage: microSD -> partitions -> FAT
+  #
+  INF  Platform/Radxa/CubieA7APkg/Drivers/SunxiMmcDxe/SunxiMmcDxe.inf
+!if $(SD_VARSTORE_ENABLE) == TRUE
+  #
+  # Variable store on the card. After SunxiMmcDxe in the FV: both wait for
+  # the timer arch protocol, and the dispatcher keeps FV order among them.
+  # VariableRuntimeDxe and FaultTolerantWriteDxe wait for SdVarStoreFvbDxe
+  # (gEdkiiNvVarStoreFormattedGuid, see the DSC), whatever their FV order.
+  #
+  INF  Platform/Radxa/CubieA7APkg/Drivers/SdVarStoreFvbDxe/SdVarStoreFvbDxe.inf
+  INF  MdeModulePkg/Universal/FaultTolerantWriteDxe/FaultTolerantWriteDxe.inf
+!endif
+  INF  MdeModulePkg/Universal/Disk/DiskIoDxe/DiskIoDxe.inf
+  INF  MdeModulePkg/Universal/Disk/PartitionDxe/PartitionDxe.inf
+  INF  MdeModulePkg/Universal/Disk/UnicodeCollation/EnglishDxe/EnglishDxe.inf
+  INF  FatPkg/EnhancedFatDxe/Fat.inf
+
+!if $(DISPLAY_ENABLE) == TRUE
+  #
+  # HDMI output (optional)
+  #
+  INF  Platform/Radxa/CubieA7APkg/Drivers/A733DisplayDxe/A733DisplayDxe.inf
+!endif
+
+!if $(USB_ENABLE) == TRUE
+  #
+  # USB host (optional)
+  #
+  INF  Platform/Radxa/CubieA7APkg/Drivers/SunxiNonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceDxe.inf
+  INF  OreEdk2BootPkg/Drivers/NonDiscoverableRegistrationDxe/NonDiscoverableRegistrationDxe.inf
+  INF  MdeModulePkg/Bus/Pci/EhciDxe/EhciDxe.inf
+  INF  MdeModulePkg/Bus/Pci/XhciDxe/XhciDxe.inf
+  INF  MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBusDxe.inf
+  INF  MdeModulePkg/Bus/Usb/UsbMassStorageDxe/UsbMassStorageDxe.inf
+  INF  MdeModulePkg/Bus/Usb/UsbKbDxe/UsbKbDxe.inf
+!endif
+
+!if $(ETH_ENABLE) == TRUE
+  #
+  # Ethernet and the network stack (optional)
+  #
+  INF  Platform/Radxa/CubieA7APkg/Drivers/SunxiGmacDxe/SunxiGmacDxe.inf
+  INF  DesignWarePkg/Drivers/DwcEqosSnpDxe/DwcEqosSnpDxe.inf
+!include NetworkPkg/Network.fdf.inc
+!endif
+
+  #
+  # EFI_RNG_PROTOCOL from oreboot main's SMCCC TRNG service (see the DSC)
+  #
+  INF  SecurityPkg/RandomNumberGenerator/RngDxe/RngDxe.inf
+
+!if $(PCIE_ENABLE) == TRUE
+  #
+  # PCIe and NVMe (optional)
+  #
+  INF  ArmPkg/Drivers/ArmPciCpuIo2Dxe/ArmPciCpuIo2Dxe.inf
+  INF  MdeModulePkg/Bus/Pci/PciHostBridgeDxe/PciHostBridgeDxe.inf
+  INF  MdeModulePkg/Bus/Pci/PciBusDxe/PciBusDxe.inf
+  INF  EmbeddedPkg/Drivers/NonCoherentIoMmuDxe/NonCoherentIoMmuDxe.inf
+  INF  MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDxe.inf
+!endif
+
+  #
+  # OS devicetree
+  #
+  INF  OreEdk2BootPkg/Drivers/FdtPlatformDxe/FdtPlatformDxe.inf
+!if "$(DTB_FILE)" != ""
+  FILE FREEFORM = 5C3F8A19-2E64-4B0D-8F71-9A2C6E13D458 {
+    SECTION RAW = $(DTB_FILE)
+  }
+!endif
+
+  #
+  # SMBIOS
+  #
+  INF  MdeModulePkg/Universal/SmbiosDxe/SmbiosDxe.inf
+  INF  OreEdk2BootPkg/Drivers/BoardSmbiosDxe/BoardSmbiosDxe.inf
+
+  #
+  # Boot manager, Setup, Shell
+  #
+  INF  MdeModulePkg/Universal/BdsDxe/BdsDxe.inf
+  INF  MdeModulePkg/Application/UiApp/UiApp.inf
+  INF  MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuApp.inf
+  INF  MdeModulePkg/Universal/DriverHealthManagerDxe/DriverHealthManagerDxe.inf
+  INF  MdeModulePkg/Universal/DevicePathDxe/DevicePathDxe.inf
+  INF  MdeModulePkg/Universal/HiiDatabaseDxe/HiiDatabaseDxe.inf
+  INF  MdeModulePkg/Universal/SetupBrowserDxe/SetupBrowserDxe.inf
+  INF  MdeModulePkg/Universal/DisplayEngineDxe/DisplayEngineDxe.inf
+
+  INF  ShellPkg/Application/Shell/Shell.inf
+
+################################################################################
+[Rule.Common.SEC.SELF_RELOC]
+  FILE SEC = $(NAMED_GUID) {
+    TE  TE Align = Auto         $(INF_OUTPUT)/$(MODULE_NAME).efi
+  }
+
+[Rule.Common.PEI_CORE]
+  FILE PEI_CORE = $(NAMED_GUID) FIXED {
+    TE  TE Align = Auto         $(INF_OUTPUT)/$(MODULE_NAME).efi
+    UI  STRING="$(MODULE_NAME)" Optional
+    VERSION STRING="$(INF_VERSION)" Optional BUILD_NUM=$(BUILD_NUMBER)
+  }
+
+[Rule.Common.DXE_CORE]
+  FILE DXE_CORE = $(NAMED_GUID) {
+    PE32 PE32                   $(INF_OUTPUT)/$(MODULE_NAME).efi
+    UI   STRING="$(MODULE_NAME)" Optional
+  }
+
+[Rule.Common.DXE_DRIVER]
+  FILE DRIVER = $(NAMED_GUID) {
+    DXE_DEPEX DXE_DEPEX Optional $(INF_OUTPUT)/$(MODULE_NAME).depex
+    PE32 PE32                   $(INF_OUTPUT)/$(MODULE_NAME).efi
+    UI   STRING="$(MODULE_NAME)" Optional
+    VERSION STRING="$(INF_VERSION)" Optional BUILD_NUM=$(BUILD_NUMBER)
+  }
+
+[Rule.Common.DXE_RUNTIME_DRIVER]
+  FILE DRIVER = $(NAMED_GUID) {
+    DXE_DEPEX DXE_DEPEX Optional $(INF_OUTPUT)/$(MODULE_NAME).depex
+    PE32 PE32                   $(INF_OUTPUT)/$(MODULE_NAME).efi
+    UI   STRING="$(MODULE_NAME)" Optional
+    VERSION STRING="$(INF_VERSION)" Optional BUILD_NUM=$(BUILD_NUMBER)
+  }
+
+[Rule.Common.UEFI_DRIVER]
+  FILE DRIVER = $(NAMED_GUID) {
+    DXE_DEPEX DXE_DEPEX Optional $(INF_OUTPUT)/$(MODULE_NAME).depex
+    PE32 PE32                   $(INF_OUTPUT)/$(MODULE_NAME).efi
+    UI   STRING="$(MODULE_NAME)" Optional
+    VERSION STRING="$(INF_VERSION)" Optional BUILD_NUM=$(BUILD_NUMBER)
+  }
+
+[Rule.Common.UEFI_APPLICATION]
+  FILE APPLICATION = $(NAMED_GUID) {
+    PE32 PE32                   $(INF_OUTPUT)/$(MODULE_NAME).efi
+    UI   STRING="$(MODULE_NAME)" Optional
+    VERSION STRING="$(INF_VERSION)" Optional BUILD_NUM=$(BUILD_NUMBER)
+  }
+

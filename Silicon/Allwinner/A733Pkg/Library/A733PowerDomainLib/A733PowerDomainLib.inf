@@ -1,0 +1,26 @@
+## @file
+#  Allwinner A733 PCK-600 peripheral power domains.
+#
+#  Copyright (c) 2026, radxa-a7a oreboot/EDK2 contributors.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION    = 0x00010006
+  BASE_NAME      = A733PowerDomainLib
+  FILE_GUID      = 7B3E1C0A-5D2F-4A8B-9C6E-A73301D0A1E5
+  MODULE_TYPE    = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS  = A733PowerDomainLib
+
+[Sources]
+  A733PowerDomainLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  Silicon/Allwinner/A733Pkg/A733Pkg.dec
+
+[LibraryClasses]
+  DebugLib
+  IoLib
+  TimerLib

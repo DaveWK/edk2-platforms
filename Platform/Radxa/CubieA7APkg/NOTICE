@@ -1,0 +1,43 @@
+EDK2 platform for the Radxa Cubie A7A (Allwinner A733)
+=======================================================
+
+License: BSD-2-Clause-Patent (same as upstream TianoCore EDK2), per file
+headers. Covers Platform/Radxa/CubieA7APkg and Silicon/Allwinner/A733Pkg.
+Shared packages (OreEdk2BootPkg, DesignWarePkg) are in OreEdk2Boot/ on the
+sbc-common branch; see OreEdk2Boot/NOTICE.
+
+Provenance
+----------
+Much of this platform is derived from vehoelite/edk2-a733 at commit
+44aeea539549e44d8f78922e3ba8c7682b084292
+(https://github.com/vehoelite/edk2-a733), BSD-2-Clause-Patent,
+an EDK2 port for the Orange Pi 4 Pro (also Allwinner A733):
+
+  Platform/Radxa/CubieA7APkg/
+    Library/CubieA7ALib/            <- OrangePi4ProPkg/Library/OrangePi4ProLib
+                                       (memory map now derived from the DTB)
+    Drivers/SunxiNonDiscoverablePciDeviceDxe/
+                                    <- OrangePi4ProPkg/Drivers/SunxiNonDiscoverablePciDeviceDxe
+                                       (unchanged, optional; carries the identity-DMA fix)
+    Drivers/SunxiMmcDxe/            <- rewritten: does its own SMHC0 clock/reset/pinmux and
+                                       full SD identification instead of replaying U-Boot state
+    CubieA7A.dsc / CubieA7A.fdf     <- OrangePi4Pro.dsc / OrangePi4Pro.fdf
+  Silicon/Allwinner/A733Pkg/        <- Silicon/Allwinner/A733Pkg (UART/Timer libs dropped)
+
+Not carried over: SunxiSimpleFbGopDxe, OrangePiLogoDxe, A733EdidLib, SunxiPcieDxe,
+SunxiSpiDxe, BootDebian, A733UartLib, A733TimerLib, and the edk2-a733 patches to the
+EDK2 tree (this platform builds against a pristine EDK2).
+
+The Maxio MAE0621A-Q3C register sequence that oreboot main writes
+(oreboot src/mainboard/radxa/cubie-a7a/main/src/gmac.rs) is taken, as data
+only, from the GPL-2.0+ Maxio driver Armbian carries
+(patch/kernel/archive/sunxi-7.2/patches.armbian/drv-net-phy-add-maxio-mae0621-phy-driver.patch,
+maxio_mae0621aq3ci_config_init). No code from it is used here;
+Drivers/SunxiGmacDxe is new.
+
+The A733 PCIe bring-up itself is in oreboot main (main/src/pcie.rs). Its combo
+PHY 1 table and its register order are taken, as data only, from Radxa's GPL-2.0
+vendor BSP (radxa/allwinner-bsp cubie-aiot-v1.4.8,
+drivers/phy/sunxi-cadence-combophy.c, drivers/pcie/pcie-sunxi-{plat,rc}.c),
+cross-checked against vehoelite/edk2-a733 @ 44aeea5 SunxiPcieDxe
+(BSD-2-Clause-Patent). No code from the BSP is used here.

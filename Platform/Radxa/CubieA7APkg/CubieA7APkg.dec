@@ -1,0 +1,50 @@
+## @file
+#  Radxa Cubie A7A (Allwinner A733) platform package declarations.
+#
+#  Derived from vehoelite/edk2-a733 @ 44aeea5 (OrangePi4ProPkg.dec).
+#
+#  Copyright (c) 2026, carpi-os contributors.
+#  Copyright (c) 2026, radxa-a7a oreboot/EDK2 contributors.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  DEC_SPECIFICATION = 0x0001001b
+  PACKAGE_NAME      = CubieA7APkg
+  PACKAGE_GUID      = 2E6A3C71-5B0D-4F2A-9C3E-7A1B5D9F0C42
+  PACKAGE_VERSION   = 0.1
+
+[Includes]
+  Include
+
+[Guids]
+  gCubieA7ATokenSpaceGuid = { 0x8d1f4b2e, 0x3a6c, 0x4e57, { 0x9b, 0x0d, 0x2c, 0x71, 0xa7, 0x33, 0xc0, 0xbe } }
+
+[Protocols]
+  # SunxiMmcDxe -> SdVarStoreFvbDxe: raw I/O limited to the variable-store
+  # window (Include/Protocol/SdVarStoreIo.h).
+  gCubieA7ASdVarStoreIoProtocolGuid = { 0x0e578e64, 0xd62f, 0x4d1c, { 0x88, 0xb8, 0x5a, 0xc7, 0x95, 0xd4, 0x32, 0x2f } }
+
+[PcdsFixedAtBuild]
+  # A733DisplayDxe: drive the TCON_TV built-in colour-bar pattern instead of
+  # the framebuffer (bring-up aid; set with -D DISPLAY_TEST_PATTERN=TRUE).
+  gCubieA7ATokenSpaceGuid.PcdDisplayTestPattern|FALSE|BOOLEAN|0x00000101
+  # SunxiMmcDxe: accept writes to the microSD (-D SD_WRITE_ENABLE=TRUE).
+  # FALSE publishes the card read-only.
+  gCubieA7ATokenSpaceGuid.PcdSdWriteEnable|FALSE|BOOLEAN|0x00000102
+  # SunxiMmcDxe: Block I/O writes below this LBA (GPT and the firmware gap,
+  # 0..16 MiB) are refused even with PcdSdWriteEnable.
+  gCubieA7ATokenSpaceGuid.PcdSdWriteProtectBelowLba|32768|UINT32|0x00000110
+  # SunxiMmcDxe/SdVarStoreFvbDxe: raw window for the UEFI variable store
+  # (-D SD_VARSTORE_ENABLE=TRUE: LBA 16384, 8192 blocks = 8..12 MiB). 0
+  # blocks = no window, no SD variable store.
+  gCubieA7ATokenSpaceGuid.PcdSdVarStoreLba|0|UINT32|0x00000111
+  gCubieA7ATokenSpaceGuid.PcdSdVarStoreBlocks|0|UINT32|0x00000112
+  # A733DisplayDxe: TRUE releases the HDMI HDCP reset (HDMI_BGR bit 18) and
+  # runs the HDCP 2.2 ESM clock (0x1694) as the vendor kernel does; FALSE
+  # keeps both off as the vendor U-Boot does (-D DISPLAY_HDCP22_CLOCKS=TRUE).
+  gCubieA7ATokenSpaceGuid.PcdDisplayHdcp22Clocks|FALSE|BOOLEAN|0x00000103
+  # A733DisplayDxe: non-zero forces the built-in mode with this pixel clock
+  # (kHz: 74250 = 720p60, 148500 = 1080p60) instead of the sink's preferred
+  # EDID timing (-D DISPLAY_FORCE_KHZ=74250). 0 = EDID choice.
+  gCubieA7ATokenSpaceGuid.PcdDisplayForcePixelClockKhz|0|UINT32|0x00000104

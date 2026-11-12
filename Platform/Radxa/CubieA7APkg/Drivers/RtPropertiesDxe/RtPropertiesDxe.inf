@@ -1,0 +1,32 @@
+## @file
+#  Publishes the EFI_RT_PROPERTIES_TABLE: no time services after
+#  ExitBootServices(), so the OS does not take the virtual RTC for a real one.
+#
+#  Copyright (c) 2026, radxa-a7a oreboot/EDK2 contributors.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION    = 0x0001001C
+  BASE_NAME      = RtPropertiesDxe
+  FILE_GUID      = 0a769b1c-5b3a-4bd3-ab34-a4106d99812b
+  MODULE_TYPE    = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT    = RtPropertiesDxeInitialize
+
+[Sources]
+  RtPropertiesDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+  DebugLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Guids]
+  gEfiRtPropertiesTableGuid             ## PRODUCES ## SystemTable
+
+[Depex]
+  TRUE

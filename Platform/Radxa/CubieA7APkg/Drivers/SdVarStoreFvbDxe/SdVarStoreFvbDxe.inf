@@ -1,0 +1,73 @@
+## @file
+#  Firmware Volume Block for the UEFI variable store of the Cubie A7A: kept in
+#  RAM where the FDF reserves it, loaded from and saved (A/B, CRC-checked) to
+#  a raw window of the microSD that SunxiMmcDxe publishes. Saves happen at
+#  boot time only; after ExitBootServices() the store refuses writes.
+#
+#  Copyright (c) 2026, radxa-a7a oreboot/EDK2 contributors.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION    = 0x0001001B
+  BASE_NAME      = SdVarStoreFvbDxe
+  FILE_GUID      = 2F1C8D8A-52A6-4978-B1FB-D58609D4A970
+  MODULE_TYPE    = DXE_RUNTIME_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT    = SdVarStoreFvbInitialize
+
+[Sources]
+  SdVarStoreFvbDxe.c
+
+[Packages]
+  EmbeddedPkg/EmbeddedPkg.dec
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  Platform/Radxa/CubieA7APkg/CubieA7APkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  MemoryAllocationLib
+  PcdLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+  UefiRuntimeLib
+
+[Guids]
+  gEfiSystemNvDataFvGuid                ## PRODUCES ## FV header
+  gEfiAuthenticatedVariableGuid         ## PRODUCES ## variable store header
+  gEfiVariableGuid                      ## CONSUMES ## variable store header
+  gEdkiiWorkingBlockSignatureGuid       ## PRODUCES ## FTW working block header
+  gEdkiiNvVarStoreFormattedGuid         ## PRODUCES ## releases VariableRuntimeDxe and FaultTolerantWriteDxe
+  gEfiEventReadyToBootGuid              ## CONSUMES ## Event
+  gEfiEventBeforeExitBootServicesGuid   ## CONSUMES ## Event
+
+[Protocols]
+  gEfiFirmwareVolumeBlockProtocolGuid   ## PRODUCES
+  gEfiDevicePathProtocolGuid            ## PRODUCES
+  gEfiLoadedImageProtocolGuid           ## NOTIFY
+  gEfiResetNotificationProtocolGuid     ## NOTIFY
+  gCubieA7ASdVarStoreIoProtocolGuid     ## SOMETIMES_CONSUMES
+
+[FixedPcd]
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageVariableBase64
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageVariableSize
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwWorkingBase64
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwWorkingSize
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwSpareBase64
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwSpareSize
+
+#
+# Same trigger as SunxiMmcDxe, which comes first in the FV, so its window
+# protocol is in place when this runs. Without it the store is RAM-only and
+# the variable services still come up: nothing here may keep them from it.
+# VariableRuntimeDxe and FaultTolerantWriteDxe wait for this driver's
+# gEdkiiNvVarStoreFormattedGuid (NvVarStoreFormattedLib in the DSC), which
+# the entry point installs on every path, after the store is valid.
+#
+[Depex]
+  gEfiTimerArchProtocolGuid

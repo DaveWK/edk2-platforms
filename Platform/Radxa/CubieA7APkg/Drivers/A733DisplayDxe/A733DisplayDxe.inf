@@ -1,0 +1,63 @@
+## @file
+#  A733DisplayDxe -- native HDMI output (DE 3.52 -> TCON_TV0 -> DW HDMI 2.0
+#  TX + Synopsys PHY) and a GOP for the Radxa Cubie A7A.
+#
+#  Copyright (c) 2026, radxa-a7a oreboot/EDK2 contributors.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION    = 0x00010006
+  BASE_NAME      = A733DisplayDxe
+  FILE_GUID      = 6C1E5A2F-9B3D-4F70-A733-D15F0A7E8C21
+  MODULE_TYPE    = DXE_DRIVER
+  VERSION_STRING = 0.1
+  ENTRY_POINT    = A733DisplayDxeEntry
+
+[Sources]
+  A733Display.h
+  A733DisplayDxe.c
+  Ccu.c
+  De.c
+  HdmiPhy.c
+  HdmiPhyTable.c
+  Tcon.c
+
+[Packages]
+  ArmPkg/ArmPkg.dec
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  OreEdk2BootPkg/OreEdk2BootPkg.dec
+  Platform/Radxa/CubieA7APkg/CubieA7APkg.dec
+  Silicon/Allwinner/A733Pkg/A733Pkg.dec
+
+[LibraryClasses]
+  A733PowerDomainLib
+  BaseLib
+  BaseMemoryLib
+  CacheMaintenanceLib
+  DebugLib
+  DevicePathLib
+  DwHdmiLib
+  DxeServicesTableLib
+  EdidLib
+  FrameBufferBltLib
+  IoLib
+  MemoryAllocationLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Protocols]
+  gEfiDevicePathProtocolGuid
+  gEfiEdidActiveProtocolGuid
+  gEfiEdidDiscoveredProtocolGuid
+  gEfiGraphicsOutputProtocolGuid
+
+[FixedPcd]
+  gCubieA7ATokenSpaceGuid.PcdDisplayTestPattern
+  gCubieA7ATokenSpaceGuid.PcdDisplayHdcp22Clocks
+  gCubieA7ATokenSpaceGuid.PcdDisplayForcePixelClockKhz
+
+[Depex]
+  gEfiCpuArchProtocolGuid
