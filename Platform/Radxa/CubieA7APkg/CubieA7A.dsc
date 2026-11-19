@@ -99,11 +99,16 @@
   # power-off). With no module fitted the probe ends at the first
   # unanswered CMD1, a few ms in, and restores the pins and the SMHC2
   # clock as it found them. The microSD path and the variable store
-  # (microSD only) are unchanged. Off by default until it has run on
-  # hardware. Enable with -D EMMC_ENABLE=TRUE; writes to the user area
-  # additionally need -D EMMC_WRITE_ENABLE=TRUE (never below 1 MiB).
+  # (microSD only) are unchanged. On by default, so that a board boots
+  # from either medium without a rebuild; -D EMMC_ENABLE=FALSE leaves
+  # SMHC2 alone. With it, BootOrder puts the eMMC's options first, then
+  # the microSD's, then USB, then the rest (PcdBootOrderEmmcSdUsb).
+  # Writes to the user area need -D EMMC_WRITE_ENABLE=TRUE (never below
+  # 16 MiB). Off by default, as the microSD's: GRUB's save_env then fails
+  # and the image's cubie-a7a-bootmode-next.service clears a one-shot
+  # next_entry from Linux instead.
   #
-  DEFINE EMMC_ENABLE            = FALSE
+  DEFINE EMMC_ENABLE            = TRUE
   DEFINE EMMC_WRITE_ENABLE      = FALSE
 
   #
@@ -360,6 +365,7 @@
 !endif
 !if $(EMMC_ENABLE) == TRUE
   gCubieA7ATokenSpaceGuid.PcdEmmcEnable|TRUE
+  gOreEdk2BootTokenSpaceGuid.PcdBootOrderEmmcSdUsb|TRUE
 !endif
 !if $(EMMC_WRITE_ENABLE) == TRUE
   gCubieA7ATokenSpaceGuid.PcdEmmcWriteEnable|TRUE

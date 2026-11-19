@@ -47,10 +47,11 @@
   # SunxiMmcDxe: accept writes to the eMMC user area (-D EMMC_WRITE_ENABLE=TRUE).
   # FALSE publishes it read-only.
   gCubieA7ATokenSpaceGuid.PcdEmmcWriteEnable|FALSE|BOOLEAN|0x00000121
-  # SunxiMmcDxe: Block I/O writes to the eMMC user area below this LBA (the
-  # GPT and the 8 KiB/128 KiB boot-image slots, 0..1 MiB) are refused even
-  # with PcdEmmcWriteEnable.
-  gCubieA7ATokenSpaceGuid.PcdEmmcWriteProtectBelowLba|2048|UINT32|0x00000122
+  # SunxiMmcDxe: Block I/O writes to the eMMC user area below this LBA are
+  # refused even with PcdEmmcWriteEnable: the GPT, the firmware (bt0 at
+  # 128 KiB, the layout table, main and the EDK2 FD up to 7 MiB) and the
+  # rest of the gap below the first partition, 0..16 MiB, as on the microSD.
+  gCubieA7ATokenSpaceGuid.PcdEmmcWriteProtectBelowLba|32768|UINT32|0x00000122
   # A733DisplayDxe: TRUE releases the HDMI HDCP reset (HDMI_BGR bit 18) and
   # runs the HDCP 2.2 ESM clock (0x1694) as the vendor kernel does; FALSE
   # keeps both off as the vendor U-Boot does (-D DISPLAY_HDCP22_CLOCKS=TRUE).
