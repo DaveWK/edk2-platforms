@@ -19,6 +19,12 @@
   fixed modes are tried in that order. The EDID is published as
   EFI_EDID_DISCOVERED/ACTIVE_PROTOCOL on the GOP handle.
 
+  Sink sensing: HPD, the TMDS RX sense lanes and the top PHY's sink
+  detect are logged at the probe, after a DDC failure and with TMDS on.
+  The mode is chosen once; a sink that only answers after TMDS starts
+  (asleep, other input) gets its EDID logged and published; this boot keeps
+  the fallback mode.
+
   Handoff: the framebuffer is reserved memory and stays scanned out after
   ExitBootServices so a kernel's efifb/simplefb can use it. The Allwinner
   vendor kernel's DE driver reprograms the DE behind its IOMMU and may log
@@ -49,6 +55,38 @@
 
 #define A733_DISPLAY_GUID \
   { 0x6c1e5a2f, 0x9b3d, 0x4f70, { 0xa7, 0x33, 0xd1, 0x5f, 0x0a, 0x7e, 0x8c, 0x21 } }
+
+//
+// Sink sensing, for the serial log. The DW HDMI PHY_STAT0 carries HPD (bit
+// 1) and the four TMDS RX sense lanes (bits 7:4); the top PHY wrapper keeps
+// its own copy (+0x10: bit 1 sink detect, bit 2 RX sense) and the DDC/HPD
+// pad select (+0x04 bit 0). Board logs: with a sink attached and awake all
+// of them read set before the PHY is powered (PHY_STAT0 0xF2, top status
+// 0x06), so no firmware enable gates them; with the sink off or on another
+// input they read 0 and the DDC NACKs, under the vendor kernel driver too.
+//
+#define SENSE_TOP_PAD             (A733_HDMI_BASE + 0xE0004)
+#define SENSE_TOP_STATUS          (A733_HDMI_BASE + 0xE0010)
+#define SENSE_TOP_SINK_DETECT     BIT1
+#define SENSE_TOP_RX_SENSE        BIT2
+#define SENSE_PHY_STAT0_RX_SENSE  0xF0
+#define SENSE_SYSCFG_RESCAL       0x03000160UL
+#define SENSE_SYSCFG_RES0         0x03000164UL
+
+//
+// HDMI lets HPD lag the sink's TMDS termination; when the termination is
+// sensed but HPD is not yet high, give HPD this long before the DDC read.
+// A sink that is off or on another input senses nothing and costs no wait.
+//
+#define HPD_SETTLE_MAX_US   500000
+#define HPD_SETTLE_STEP_US  10000
+
+typedef struct {
+  UINT8      PhyStat0;
+  UINT32     TopStatus;
+  BOOLEAN    Hpd;
+  BOOLEAN    Terminated;   // any RX sense lane, top RX sense or sink detect
+} A733_SINK_SENSE;
 
 #pragma pack (1)
 typedef struct {
@@ -283,6 +321,148 @@ HavePhy (
 }
 
 STATIC
+VOID
+SinkSense (
+  OUT A733_SINK_SENSE  *Sense
+  )
+{
+  Sense->PhyStat0   = DwHdmiRead8 (A733_HDMI_BASE, HDMI_PHY_STAT0);
+  Sense->TopStatus  = MmioRead32 (SENSE_TOP_STATUS);
+  Sense->Hpd        = (BOOLEAN)((Sense->PhyStat0 & HDMI_PHY_HPD) != 0);
+  Sense->Terminated = (BOOLEAN)(((Sense->PhyStat0 & SENSE_PHY_STAT0_RX_SENSE) != 0) ||
+                                ((Sense->TopStatus & (SENSE_TOP_SINK_DETECT | SENSE_TOP_RX_SENSE)) != 0));
+}
+
+/**
+  Read and log what the transmitter senses of the sink.
+
+  @param[in]  When   Where in the bring-up, for the log line.
+  @param[out] Sense  The readings.
+**/
+STATIC
+VOID
+LogSinkSense (
+  IN  CONST CHAR8      *When,
+  OUT A733_SINK_SENSE  *Sense
+  )
+{
+  SinkSense (Sense);
+  DEBUG ((
+    DEBUG_ERROR,
+    "A733Display: sink %a: HPD %a, RX sense lanes 0x%x (PHY_STAT0 0x%02x); top status 0x%08x (sink detect %u, RX sense %u), pad select %u\n",
+    When,
+    Sense->Hpd ? "high" : "low",
+    (UINT32)((Sense->PhyStat0 & SENSE_PHY_STAT0_RX_SENSE) >> 4),
+    Sense->PhyStat0,
+    Sense->TopStatus,
+    (Sense->TopStatus & SENSE_TOP_SINK_DETECT) ? 1 : 0,
+    (Sense->TopStatus & SENSE_TOP_RX_SENSE) ? 1 : 0,
+    MmioRead32 (SENSE_TOP_PAD) & BIT0
+    ));
+}
+
+/**
+  Log the EDID DwHdmiReadEdid returned, or why it rejected block 0: the
+  header, version, extension count, per-block checksums and the first
+  detailed timing (the sink's preferred mode).
+**/
+STATIC
+VOID
+LogEdid (
+  IN CONST UINT8  *Edid,
+  IN UINTN        EdidSize,
+  IN EFI_STATUS   ReadStatus
+  )
+{
+  EDID_DISPLAY_MODE  Dtd;
+  UINTN              Block;
+  UINTN              Index;
+  UINT8              Sum;
+
+  if (ReadStatus == EFI_CRC_ERROR) {
+    // Block 0 was read but failed the header or checksum test.
+    Sum = 0;
+    for (Index = 0; Index < EDID_BLOCK_SIZE; Index++) {
+      Sum = (UINT8)(Sum + Edid[Index]);
+    }
+
+    DEBUG ((
+      DEBUG_ERROR,
+      "A733Display: EDID block 0 rejected: header %02x %02x %02x %02x %02x %02x %02x %02x, byte sum 0x%02x (want 0x00)\n",
+      Edid[0],
+      Edid[1],
+      Edid[2],
+      Edid[3],
+      Edid[4],
+      Edid[5],
+      Edid[6],
+      Edid[7],
+      Sum
+      ));
+    return;
+  }
+
+  if (EFI_ERROR (ReadStatus) || (EdidSize < EDID_BLOCK_SIZE)) {
+    return;
+  }
+
+  DEBUG ((
+    DEBUG_ERROR,
+    "A733Display: EDID header %a, version %u.%u, %u extension block(s); %u block(s) kept\n",
+    EdidBaseBlockValid (Edid) ? "ok" : "BAD",
+    Edid[18],
+    Edid[19],
+    Edid[126],
+    (UINT32)(EdidSize / EDID_BLOCK_SIZE)
+    ));
+  for (Block = 0; Block < EdidSize / EDID_BLOCK_SIZE; Block++) {
+    DEBUG ((
+      DEBUG_ERROR,
+      "A733Display: EDID block %u checksum %a\n",
+      (UINT32)Block,
+      EdidBlockValid (Edid + Block * EDID_BLOCK_SIZE) ? "ok" : "BAD"
+      ));
+  }
+
+  if (EdidDecodeDtd (Edid + 54, &Dtd)) {
+    DEBUG ((
+      DEBUG_ERROR,
+      "A733Display: EDID preferred timing %ux%u, %u kHz, htotal %u vtotal %u (PHY settings %a)\n",
+      Dtd.HActive,
+      Dtd.VActive,
+      Dtd.PixelClockKhz,
+      (UINT32)EDID_MODE_HTOTAL (&Dtd),
+      (UINT32)EDID_MODE_VTOTAL (&Dtd),
+      HavePhy (Dtd.PixelClockKhz) ? "captured" : "missing, not usable"
+      ));
+  } else {
+    DEBUG ((DEBUG_ERROR, "A733Display: EDID first descriptor is not a usable detailed timing\n"));
+  }
+}
+
+/**
+  Read the EDID into mEdid and log the transfer's outcome.
+
+  @param[out] EdidSize  Bytes kept (whole blocks), 0 on failure.
+**/
+STATIC
+EFI_STATUS
+ReadAndLogEdid (
+  OUT UINTN  *EdidSize
+  )
+{
+  EFI_STATUS  Status;
+
+  Status = DwHdmiReadEdid (A733_HDMI_BASE, A733_HDMI_SFR_CLOCK, mEdid, sizeof (mEdid), EdidSize);
+  LogEdid (mEdid, *EdidSize, Status);
+  if (EFI_ERROR (Status)) {
+    *EdidSize = 0;
+  }
+
+  return Status;
+}
+
+STATIC
 EFI_STATUS
 BringUp (
   IN CONST A733_DISPLAY_MODE  *Mode,
@@ -374,6 +554,8 @@ A733DisplayBringUp (
   EFI_HANDLE               Handle;
   UINT32                   ForceKhz;
   UINTN                    Index;
+  UINTN                    Waited;
+  A733_SINK_SENSE          Sense;
 
   ASSERT (ARRAY_SIZE (mModeVics) == ARRAY_SIZE (mModes));
 
@@ -415,12 +597,38 @@ A733DisplayBringUp (
     DwHdmiRead8 (A733_HDMI_BASE, HDMI_PHY_STAT0),
     HDMI_PHY_HPD
     ));
+  LogSinkSense ("at probe", &Sense);
+  DEBUG ((
+    DEBUG_ERROR,
+    "A733Display: SYSCFG rescal 0x%08x res0 0x%08x (before the PHY sets them)\n",
+    MmioRead32 (SENSE_SYSCFG_RESCAL),
+    MmioRead32 (SENSE_SYSCFG_RES0)
+    ));
+  if (!Sense.Hpd && Sense.Terminated) {
+    for (Waited = 0; (Waited < HPD_SETTLE_MAX_US) && !Sense.Hpd; Waited += HPD_SETTLE_STEP_US) {
+      MicroSecondDelay (HPD_SETTLE_STEP_US);
+      SinkSense (&Sense);
+    }
+
+    DEBUG ((
+      DEBUG_ERROR,
+      "A733Display: TMDS termination sensed, HPD %a after %u ms\n",
+      Sense.Hpd ? "rose" : "still low",
+      (UINT32)(Waited / 1000)
+      ));
+  } else if (!Sense.Hpd) {
+    DEBUG ((
+      DEBUG_ERROR,
+      "A733Display: no sink sensed (no HPD, no TMDS termination): monitor off, asleep or on another input,\n"
+      "  or a cable/adapter without HPD and DDC; trying the DDC anyway\n"
+      ));
+  }
 
   A733DisplayStage (A733DisplayStageEdid);
-  Status = DwHdmiReadEdid (A733_HDMI_BASE, A733_HDMI_SFR_CLOCK, mEdid, sizeof (mEdid), &EdidSize);
+  Status = ReadAndLogEdid (&EdidSize);
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "A733Display: no EDID (%r), using fixed modes\n", Status));
-    EdidSize = 0;
+    LogSinkSense ("after the DDC failure", &Sense);
   } else {
     DEBUG ((
       DEBUG_ERROR,
@@ -445,11 +653,13 @@ A733DisplayBringUp (
   if (Mode != NULL) {
     DEBUG ((
       DEBUG_ERROR,
-      "A733Display: mode %a %ux%u, %u kHz\n",
+      "A733Display: mode %a %ux%u, %u kHz (%a)\n",
       Mode->Name,
       Mode->HActive,
       Mode->VActive,
-      Mode->PixelClockKhz
+      Mode->PixelClockKhz,
+      (EdidSize == 0) ? "fixed fallback: no EDID" :
+      (Mode == &mEdidMode) ? "EDID detailed timing" : "fixed mode the EDID lists or allows"
       ));
   }
 
@@ -488,6 +698,21 @@ A733DisplayBringUp (
     DEBUG ((DEBUG_ERROR, "A733Display: %a bring-up stopped: %r; no GOP\n", Mode->Name, Status));
     FreeFrameBuffer (FrameBuffer, FbSize);
     return Status;
+  }
+
+  //
+  // The TMDS signal is up. A sink that was asleep or on another input may
+  // answer now; this boot keeps its mode, but log it and publish the EDID.
+  //
+  LogSinkSense ("with TMDS on", &Sense);
+  if ((EdidSize == 0) && Sense.Hpd) {
+    Status = ReadAndLogEdid (&EdidSize);
+    DEBUG ((
+      DEBUG_ERROR,
+      "A733Display: the sink raised HPD after the probe; EDID now %r; this boot stays at %a\n",
+      Status,
+      Mode->Name
+      ));
   }
 
   mGopModeInfo.Version              = 0;
