@@ -20,7 +20,8 @@ an EDK2 port for the Orange Pi 4 Pro (also Allwinner A733):
                                     <- OrangePi4ProPkg/Drivers/SunxiNonDiscoverablePciDeviceDxe
                                        (unchanged, optional; carries the identity-DMA fix)
     Drivers/SunxiMmcDxe/            <- rewritten: does its own SMHC0 clock/reset/pinmux and
-                                       full SD identification instead of replaying U-Boot state
+                                       full SD identification instead of replaying U-Boot state;
+                                       optional eMMC instance on SMHC2 (EMMC_ENABLE)
     CubieA7A.dsc / CubieA7A.fdf     <- OrangePi4Pro.dsc / OrangePi4Pro.fdf
   Silicon/Allwinner/A733Pkg/        <- Silicon/Allwinner/A733Pkg (UART/Timer libs dropped)
 

@@ -90,6 +90,23 @@
   DEFINE SD_VARSTORE_ENABLE     = FALSE
 
   #
+  # eMMC socket (SunxiMmcDxe on SMHC2, bank C at 1.8 V). Probes for a
+  # module after the microSD and publishes its user area as a second,
+  # non-removable Block I/O device (VenHw/eMMC(0)/Ctrl(0)), 8-bit, at
+  # 52 MHz High Speed SDR if the module and a read-back check allow, else
+  # 25 or 12 MHz. Boot partitions are not published, and the only EXT_CSD
+  # bytes ever written are BUS_WIDTH and HS_TIMING (both reset by CMD0 and
+  # power-off). With no module fitted the probe ends at the first
+  # unanswered CMD1, a few ms in, and restores the pins and the SMHC2
+  # clock as it found them. The microSD path and the variable store
+  # (microSD only) are unchanged. Off by default until it has run on
+  # hardware. Enable with -D EMMC_ENABLE=TRUE; writes to the user area
+  # additionally need -D EMMC_WRITE_ENABLE=TRUE (never below 1 MiB).
+  #
+  DEFINE EMMC_ENABLE            = FALSE
+  DEFINE EMMC_WRITE_ENABLE      = FALSE
+
+  #
   # Ethernet (GMAC0 via DwcEqosSnpDxe) and the UEFI network stack: PXE and
   # HTTP boot over IPv4 and IPv6. oreboot main brings the GMAC and its PHY
   # up; EDK2 only runs the MAC/DMA. Off by default: untested on hardware.
@@ -341,6 +358,12 @@
   gCubieA7ATokenSpaceGuid.PcdSdVarStoreLba|16384
   gCubieA7ATokenSpaceGuid.PcdSdVarStoreBlocks|8192
 !endif
+!if $(EMMC_ENABLE) == TRUE
+  gCubieA7ATokenSpaceGuid.PcdEmmcEnable|TRUE
+!endif
+!if $(EMMC_WRITE_ENABLE) == TRUE
+  gCubieA7ATokenSpaceGuid.PcdEmmcWriteEnable|TRUE
+!endif
 !if $(ETH_ENABLE) == TRUE
 !include NetworkPkg/NetworkFixedPcds.dsc.inc
   # NetworkPkg's "dynamic" defaults, fixed here: this platform has no
@@ -524,7 +547,7 @@
   MdeModulePkg/Universal/SerialDxe/SerialDxe.inf
 
   #
-  # Storage: microSD (SMHC0) -> partitions -> FAT
+  # Storage: microSD (SMHC0), eMMC (SMHC2, EMMC_ENABLE) -> partitions -> FAT
   #
   Platform/Radxa/CubieA7APkg/Drivers/SunxiMmcDxe/SunxiMmcDxe.inf
 !if $(SD_VARSTORE_ENABLE) == TRUE

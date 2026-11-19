@@ -40,6 +40,17 @@
   # blocks = no window, no SD variable store.
   gCubieA7ATokenSpaceGuid.PcdSdVarStoreLba|0|UINT32|0x00000111
   gCubieA7ATokenSpaceGuid.PcdSdVarStoreBlocks|0|UINT32|0x00000112
+  # SunxiMmcDxe: also probe the eMMC socket (SMHC2) and publish its user
+  # area as a second Block I/O device (-D EMMC_ENABLE=TRUE). FALSE leaves
+  # SMHC2 and its pins untouched.
+  gCubieA7ATokenSpaceGuid.PcdEmmcEnable|FALSE|BOOLEAN|0x00000120
+  # SunxiMmcDxe: accept writes to the eMMC user area (-D EMMC_WRITE_ENABLE=TRUE).
+  # FALSE publishes it read-only.
+  gCubieA7ATokenSpaceGuid.PcdEmmcWriteEnable|FALSE|BOOLEAN|0x00000121
+  # SunxiMmcDxe: Block I/O writes to the eMMC user area below this LBA (the
+  # GPT and the 8 KiB/128 KiB boot-image slots, 0..1 MiB) are refused even
+  # with PcdEmmcWriteEnable.
+  gCubieA7ATokenSpaceGuid.PcdEmmcWriteProtectBelowLba|2048|UINT32|0x00000122
   # A733DisplayDxe: TRUE releases the HDMI HDCP reset (HDMI_BGR bit 18) and
   # runs the HDCP 2.2 ESM clock (0x1694) as the vendor kernel does; FALSE
   # keeps both off as the vendor U-Boot does (-D DISPLAY_HDCP22_CLOCKS=TRUE).

@@ -1,10 +1,12 @@
 ## @file
-#  SunxiMmcDxe -- EFI_BLOCK_IO for the Cubie A7A microSD slot (A733 SMHC0).
+#  SunxiMmcDxe -- EFI_BLOCK_IO for the Cubie A7A microSD slot (A733 SMHC0)
+#  and, with PcdEmmcEnable, the user area of the eMMC socket (SMHC2).
 #
-#  Initialises the controller and the card itself (no reliance on a previous
-#  boot stage), raises the clock to 25/50 MHz when a read-back check passes,
-#  and serves PIO block reads and verified writes. Publishes the raw window
-#  of the UEFI variable store (SdVarStoreFvbDxe) when the build reserves one.
+#  Initialises the controllers and the cards itself (no reliance on a
+#  previous boot stage), raises the clock to 25/50 MHz when a read-back
+#  check passes, and serves PIO block reads and verified writes. Publishes
+#  the raw window of the UEFI variable store (SdVarStoreFvbDxe) on the
+#  microSD only, when the build reserves one.
 #
 #  Derived from vehoelite/edk2-a733 @ 44aeea5 (OrangePi4ProPkg SunxiMmcDxe).
 #
@@ -54,3 +56,6 @@
   gCubieA7ATokenSpaceGuid.PcdSdWriteProtectBelowLba
   gCubieA7ATokenSpaceGuid.PcdSdVarStoreLba
   gCubieA7ATokenSpaceGuid.PcdSdVarStoreBlocks
+  gCubieA7ATokenSpaceGuid.PcdEmmcEnable
+  gCubieA7ATokenSpaceGuid.PcdEmmcWriteEnable
+  gCubieA7ATokenSpaceGuid.PcdEmmcWriteProtectBelowLba

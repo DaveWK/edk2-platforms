@@ -56,12 +56,47 @@
   therefore never muxed to SMHC0: it is driven high as a GPIO (data bit set
   before the pin becomes an output) and the bus stays 1-bit (D0 only).
 
+  eMMC (PcdEmmcEnable, 2026-11-12): the same code drives a second instance
+  on SMHC2, the eMMC socket (bank C, 1.8 V, 8-bit). After the microSD
+  instance has finished, unchanged, it
+    - muxes PC0/1/5/6/8-11/13-16 to SMHC2 (function 3) with the vendor
+      kernel's pulls and drive levels, by read-modify-write of those pins'
+      fields only (PC2-4, PC7, PC12 belong to the SPI NOR),
+    - cycles the SMHC2 bus gate/reset, programs its module clock (same
+      layout and formula as SMHC0's; its PLL sources differ, so the raised
+      clocks come from PERI0_600M), and sets HALF_START_BIT for eMMC 4.5+
+      as the SoC documentation asks,
+    - runs the eMMC identification: CMD0, CMD1 (OCR 0x40FF8080: sector
+      mode, 1.7-1.95 and 2.7-3.6 V) until ready, CMD2, CMD3 with RCA 1
+      (host assigned), CMD9, CMD7, then CMD8 = SEND_EXT_CSD at 12 MHz on
+      the 1-bit bus; the capacity is EXT_CSD SEC_COUNT (212..215),
+    - switches BUS_WIDTH (183) to 8 bits, else 4, keeping a width only if
+      EXT_CSD reads back identical in it, and then HS_TIMING (185) to High
+      Speed with the clock at 50 MHz SDR if the module offers 52 MHz,
+      falling back to 25 and 12 MHz through the same read-back checks as
+      the microSD.
+  CMD6 is only ever issued for those two EXT_CSD bytes (EmmcSwitch refuses
+  any other index); both are reset by CMD0 and power-off. PARTITION_CONFIG,
+  BOOT_WP, ERASE_GROUP_DEF, the enhanced area and every other persistent or
+  one-time field are never written. Only the user area is published: the
+  boot partitions, which may hold the boot firmware, would need a write to
+  PARTITION_CONFIG to be reached at all, and the probe refuses a device
+  whose PARTITION_ACCESS is not the user area after CMD0. HS200/HS400 are
+  not implemented (tuning with CMD21 and the SMHC2 delay chain, a 400 MHz
+  module clock and, realistically, DMA instead of PIO). The variable store
+  stays on the microSD; this instance never offers its window protocol.
+  Writes are a separate build option (PcdEmmcWriteEnable, off) and never
+  reach below PcdEmmcWriteProtectBelowLba. With no module fitted the first
+  CMD1 times out (64 card clocks at 187.5 kHz) and the probe restores the
+  bank C pin and SMHC2 clock registers it changed.
+
   Copyright (c) 2026, carpi-os contributors.
   Copyright (c) 2026, radxa-a7a oreboot/EDK2 contributors.
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
 #include <Uefi.h>
+#include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
 #include <Library/DevicePathLib.h>
@@ -98,6 +133,8 @@
 #define SMHC_RINT     0x38
 #define SMHC_STATUS   0x3C
 #define SMHC_NTSR     0x5C
+#define SMHC_HWRST    0x78
+#define SMHC_EDSD     0x10C      // eMMC DDR start bit detection
 #define SMHC_DRV_DL   0x140
 #define SMHC_SAMP_DL  0x144
 #define SMHC_FIFO     0x200
@@ -147,6 +184,13 @@
 #define SMHC_DRV_DL_CMD_180       BIT16
 #define SMHC_DRV_DL_DAT_180       BIT17
 
+#define SMHC_HWRST_ACTIVE         BIT0      // RST_n released (reset default)
+#define SMHC_EDSD_HALF_START_BIT  BIT0      // eMMC 4.5+: start bit may be shorter than a cycle
+
+#define SMHC_WIDTH_1BIT           0
+#define SMHC_WIDTH_4BIT           1
+#define SMHC_WIDTH_8BIT           2
+
 //
 // Response types, expressed as the CMDR flag combination they need.
 //
@@ -172,6 +216,39 @@
 #define R1_READY_FOR_DATA       BIT8
 #define R1_STATE(r)             (((r) >> 9) & 0xF)
 #define R1_STATE_TRAN           4
+#define R1_SWITCH_ERROR         BIT7
+
+//
+// eMMC (SMHC2). CMD1 argument: sector mode, 1.70-1.95 V and 2.7-3.6 V.
+//
+#define EMMC_OCR_ARG            0x40FF8080U
+#define EMMC_OCR_BUSY           BIT31
+#define EMMC_OCR_ACCESS(o)      (((o) >> 29) & 0x3)   // 2 = sector mode
+#define EMMC_CMD1_TIMEOUT_MS    1000        // JEDEC: init done within 1 s
+#define EMMC_RCA                1           // assigned by the host (CMD3)
+
+// EXT_CSD byte indices used here. Only BUS_WIDTH and HS_TIMING are ever
+// written (EmmcSwitch).
+#define EXT_CSD_PARTITION_SUPPORT   160
+#define EXT_CSD_PARTITION_CONFIG    179     // read only: PARTITION_ACCESS must be 0
+#define EXT_CSD_ERASED_MEM_CONT     181
+#define EXT_CSD_BUS_WIDTH           183
+#define EXT_CSD_HS_TIMING           185
+#define EXT_CSD_REV                 192
+#define EXT_CSD_CARD_TYPE           196
+#define EXT_CSD_SEC_COUNT           212     // 4 bytes, little endian
+#define EXT_CSD_S_A_TIMEOUT         217
+#define EXT_CSD_HC_WP_GRP_SIZE      221
+#define EXT_CSD_ERASE_TIMEOUT_MULT  223
+#define EXT_CSD_HC_ERASE_GRP_SIZE   224
+#define EXT_CSD_BOOT_SIZE_MULT      226
+#define EXT_CSD_SEC_FEATURE_SUPPORT 231
+
+#define EXT_CSD_BUS_WIDTH_4         1
+#define EXT_CSD_BUS_WIDTH_8         2
+#define EXT_CSD_HS_TIMING_HS        1
+#define EXT_CSD_CARD_TYPE_HS52      BIT1
+#define EXT_CSD_PART_ACCESS_MASK    0x7
 
 //
 // CCU module clock: source 0 = OSC24M, M an (M+1) divider. On the A733 N is
@@ -187,6 +264,14 @@
 #define MCLK_DATA_MODE          (MCLK_ENABLE | MCLK_N (0) | MCLK_M (0))   // 24 MHz            -> 12 MHz card
 #define MCLK_25M_MODE           (MCLK_ENABLE | MCLK_SRC_PERI0_400M | MCLK_M (7))   // 50 MHz  -> 25 MHz card
 #define MCLK_50M_MODE           (MCLK_ENABLE | MCLK_SRC_PERI0_400M | MCLK_M (3))   // 100 MHz -> 50 MHz card
+//
+// SMHC2 has the same register layout and formula, but its sources 1 and 2
+// are PERI0_800M and PERI0_600M. PERI0_600M = PERI0PLL2X / 2 sits behind
+// the same PLL output 0 as PERI0_400M, so the same PLL check covers it.
+//
+#define MCLK_SRC_PERI0_600M     ((UINT32)2 << 24)
+#define EMMC_MCLK_25M_MODE      (MCLK_ENABLE | MCLK_SRC_PERI0_600M | MCLK_M (11))  // 50 MHz  -> 25 MHz card
+#define EMMC_MCLK_50M_MODE      (MCLK_ENABLE | MCLK_SRC_PERI0_600M | MCLK_M (5))   // 100 MHz -> 50 MHz card
 
 //
 // PERI0_400M = PERI0PLL2X / 3, behind PLL output 0. bt0 enables it; check
@@ -220,6 +305,18 @@ STATIC CONST MMC_SPEED_MODE  mSpeedModes[MmcSpeedCount] = {
   { "50 MHz (High Speed)",   MCLK_50M_MODE,  SMHC_DRV_DL_CMD_180 | SMHC_DRV_DL_DAT_180, SMHC_NTSR_CMD_PH (1) | SMHC_NTSR_DAT_PH (1) },
 };
 
+//
+// eMMC: the same phases at the same card clocks (25 MHz legacy, 50 MHz
+// High Speed SDR after HS_TIMING = 1), from PERI0_600M. No SMHC2 value of
+// the vendor kernel was captured with a module fitted, so these are kept
+// only if the read-back checks pass on the module at hand.
+//
+STATIC CONST MMC_SPEED_MODE  mEmmcSpeedModes[MmcSpeedCount] = {
+  { "12 MHz",                MCLK_DATA_MODE,     0,                                         0 },
+  { "25 MHz",                EMMC_MCLK_25M_MODE, SMHC_DRV_DL_CMD_180,                       SMHC_NTSR_CMD_PH (0) | SMHC_NTSR_DAT_PH (0) },
+  { "52 MHz HS (50 MHz)",    EMMC_MCLK_50M_MODE, SMHC_DRV_DL_CMD_180 | SMHC_DRV_DL_DAT_180, SMHC_NTSR_CMD_PH (1) | SMHC_NTSR_DAT_PH (1) },
+};
+
 #define SUNXI_MMC_SIGNATURE  SIGNATURE_32 ('s', 'm', 'm', 'c')
 
 typedef struct {
@@ -228,13 +325,24 @@ typedef struct {
   EFI_BLOCK_IO_PROTOCOL    BlockIo;
   EFI_BLOCK_IO_MEDIA       Media;
   UINTN                    RegBase;
+  UINTN                    CcuClk;          // module clock register
+  UINTN                    CcuBgr;          // bus gate/reset register
+  BOOLEAN                  Emmc;            // SMHC2 eMMC, else SMHC0 microSD
+  CONST CHAR8              *Name;           // "SD" or "eMMC"
+  CONST MMC_SPEED_MODE     *Modes;          // MmcSpeedCount entries
+  UINT32                   WriteProtectBelowLba;
   UINT32                   Rca;
   BOOLEAN                  HighCapacity;    // block (not byte) addressed
   MMC_SPEED                Speed;           // current setting
   MMC_SPEED                SpeedCap;        // fastest setting still allowed
+  UINT32                   BusWidth;        // 1, 4 or 8 (the microSD: always 1)
+  UINT32                   BusWidthCap;     // eMMC: widest width still allowed
   UINT32                   *Scratch;        // MAX_BLOCKS_PER_XFER blocks: verify buffer
+  UINT32                   ExtCsd[MMC_BLOCK_SIZE / sizeof (UINT32)];  // eMMC: as read on the 1-bit bus
   CUBIE_A7A_SD_VARSTORE_IO_PROTOCOL    VarStoreIo;
 } SUNXI_MMC_PRIVATE;
+
+#define EXT_CSD(Priv, Index)  (((CONST UINT8 *)(Priv)->ExtCsd)[(Index)])
 
 #define SUNXI_MMC_FROM_BLOCKIO(a)   BASE_CR (a, SUNXI_MMC_PRIVATE, BlockIo)
 #define SUNXI_MMC_FROM_VARSTORE(a)  BASE_CR (a, SUNXI_MMC_PRIVATE, VarStoreIo)
@@ -257,6 +365,48 @@ STATIC SUNXI_MMC_DEVICE_PATH  mSunxiMmcDevicePath = {
       { (UINT8)(sizeof (VENDOR_DEVICE_PATH)), (UINT8)((sizeof (VENDOR_DEVICE_PATH)) >> 8) }
     },
     SUNXI_MMC_DP_GUID
+  },
+  { END_DEVICE_PATH_TYPE, END_ENTIRE_DEVICE_PATH_SUBTYPE,
+    { sizeof (EFI_DEVICE_PATH_PROTOCOL), 0 }
+  }
+};
+
+//
+// eMMC: VenHw(SMHC2)/eMMC(0)/Ctrl(0), the shape EDK2's own EmmcDxe gives
+// the user data area (Ctrl(0)). PlatformBootManagerLib names an ESP found
+// below it "UEFI OS on eMMC".
+//
+#pragma pack(1)
+typedef struct {
+  VENDOR_DEVICE_PATH          Vendor;
+  EMMC_DEVICE_PATH            Emmc;
+  CONTROLLER_DEVICE_PATH      UserArea;
+  EFI_DEVICE_PATH_PROTOCOL    End;
+} SUNXI_EMMC_DEVICE_PATH;
+#pragma pack()
+
+// {A94BE1CE-0B97-4A5E-9309-EFD550D72623}
+#define SUNXI_EMMC_DP_GUID \
+  { 0xa94be1ce, 0x0b97, 0x4a5e, { 0x93, 0x09, 0xef, 0xd5, 0x50, 0xd7, 0x26, 0x23 } }
+
+STATIC SUNXI_EMMC_DEVICE_PATH  mSunxiEmmcDevicePath = {
+  {
+    { HARDWARE_DEVICE_PATH, HW_VENDOR_DP,
+      { (UINT8)(sizeof (VENDOR_DEVICE_PATH)), (UINT8)((sizeof (VENDOR_DEVICE_PATH)) >> 8) }
+    },
+    SUNXI_EMMC_DP_GUID
+  },
+  {
+    { MESSAGING_DEVICE_PATH, MSG_EMMC_DP,
+      { (UINT8)(sizeof (EMMC_DEVICE_PATH)), (UINT8)((sizeof (EMMC_DEVICE_PATH)) >> 8) }
+    },
+    0
+  },
+  {
+    { HARDWARE_DEVICE_PATH, HW_CONTROLLER_DP,
+      { (UINT8)(sizeof (CONTROLLER_DEVICE_PATH)), (UINT8)((sizeof (CONTROLLER_DEVICE_PATH)) >> 8) }
+    },
+    0
   },
   { END_DEVICE_PATH_TYPE, END_ENTIRE_DEVICE_PATH_SUBTYPE,
     { sizeof (EFI_DEVICE_PATH_PROTOCOL), 0 }
@@ -327,6 +477,150 @@ MmcSetupPins (
   }
 }
 
+//
+// eMMC pins on bank C: function 3, with the pulls (1 = up, 2 = down) and
+// drive levels of the vendor kernel's sdc2 pin groups (CMD and D0-D7 pulled
+// up at level 1, CLK and RST pulled up at level 3, DS pulled down at
+// level 3). Only these pins' fields are ever changed.
+//
+typedef struct {
+  UINT8    Pin;
+  UINT8    Pull;
+  UINT8    Drive;
+} EMMC_PIN;
+
+STATIC CONST EMMC_PIN  mEmmcPins[] = {
+  { 0,  2, 3 },   // DS
+  { 1,  1, 3 },   // RST
+  { 5,  1, 3 },   // CLK
+  { 6,  1, 1 },   // CMD
+  { 10, 1, 1 },   // D0
+  { 13, 1, 1 },   // D1
+  { 15, 1, 1 },   // D2
+  { 8,  1, 1 },   // D3
+  { 9,  1, 1 },   // D4
+  { 11, 1, 1 },   // D5
+  { 14, 1, 1 },   // D6
+  { 16, 1, 1 },   // D7
+};
+
+#define EMMC_PIN_FUNCTION  3
+
+//
+// What the eMMC probe changes outside SMHC2 itself, so a probe that finds
+// no module can put it back.
+//
+typedef struct {
+  UINT32    Cfg[3];
+  UINT32    Drv[3];
+  UINT32    Pul[2];
+  UINT32    Clk;
+  UINT32    Bgr;
+} EMMC_SAVED_STATE;
+
+/**
+  Replace one pin's field (Bits wide, packed from bit 0 of the first
+  register at First) with Value.
+**/
+STATIC
+VOID
+PioSetField (
+  IN UINTN   First,
+  IN UINT32  Pin,
+  IN UINT32  Bits,
+  IN UINT32  Value
+  )
+{
+  UINT32  PerReg;
+  UINT32  Shift;
+  UINT32  Mask;
+
+  PerReg = 32 / Bits;
+  Shift  = (Pin % PerReg) * Bits;
+  Mask   = ((1U << Bits) - 1) << Shift;
+  MmioAndThenOr32 (First + (Pin / PerReg) * 4, ~Mask, (Value << Shift) & Mask);
+}
+
+STATIC
+UINT32
+PioGetField (
+  IN CONST UINT32  *Regs,
+  IN UINT32        Pin,
+  IN UINT32        Bits
+  )
+{
+  UINT32  PerReg;
+
+  PerReg = 32 / Bits;
+  return (Regs[Pin / PerReg] >> ((Pin % PerReg) * Bits)) & ((1U << Bits) - 1);
+}
+
+STATIC
+VOID
+EmmcSaveState (
+  OUT EMMC_SAVED_STATE  *Saved
+  )
+{
+  UINT32  Index;
+
+  for (Index = 0; Index < ARRAY_SIZE (Saved->Cfg); Index++) {
+    Saved->Cfg[Index] = MmioRead32 (CUBIE_A7A_PIO_CFG0 (CUBIE_A7A_PIO_BANK_C) + Index * 4);
+    Saved->Drv[Index] = MmioRead32 (CUBIE_A7A_PIO_DRV0 (CUBIE_A7A_PIO_BANK_C) + Index * 4);
+  }
+
+  for (Index = 0; Index < ARRAY_SIZE (Saved->Pul); Index++) {
+    Saved->Pul[Index] = MmioRead32 (CUBIE_A7A_PIO_PUL0 (CUBIE_A7A_PIO_BANK_C) + Index * 4);
+  }
+
+  Saved->Clk = MmioRead32 (CUBIE_A7A_CCU_SMHC2_CLK);
+  Saved->Bgr = MmioRead32 (CUBIE_A7A_CCU_SMHC2_BGR);
+}
+
+/**
+  Undo the probe: SMHC2 clock and bus gate/reset as they were, then the
+  eMMC pins' function, drive and pull fields (function first, so no pin
+  drives with a stale level).
+**/
+STATIC
+VOID
+EmmcRestoreState (
+  IN CONST EMMC_SAVED_STATE  *Saved
+  )
+{
+  UINT32  Index;
+  UINT32  Pin;
+
+  MmioWrite32 (CUBIE_A7A_CCU_SMHC2_CLK, Saved->Clk);
+  MmioWrite32 (CUBIE_A7A_CCU_SMHC2_BGR, Saved->Bgr);
+
+  for (Index = 0; Index < ARRAY_SIZE (mEmmcPins); Index++) {
+    Pin = mEmmcPins[Index].Pin;
+    PioSetField (CUBIE_A7A_PIO_CFG0 (CUBIE_A7A_PIO_BANK_C), Pin, 4, PioGetField (Saved->Cfg, Pin, 4));
+    PioSetField (CUBIE_A7A_PIO_DRV0 (CUBIE_A7A_PIO_BANK_C), Pin, 4, PioGetField (Saved->Drv, Pin, 4));
+    PioSetField (CUBIE_A7A_PIO_PUL0 (CUBIE_A7A_PIO_BANK_C), Pin, 2, PioGetField (Saved->Pul, Pin, 2));
+  }
+}
+
+/**
+  Pull and drive level first, then the function, for each eMMC pin.
+**/
+STATIC
+VOID
+EmmcSetupPins (
+  VOID
+  )
+{
+  UINT32  Index;
+  UINT32  Pin;
+
+  for (Index = 0; Index < ARRAY_SIZE (mEmmcPins); Index++) {
+    Pin = mEmmcPins[Index].Pin;
+    PioSetField (CUBIE_A7A_PIO_PUL0 (CUBIE_A7A_PIO_BANK_C), Pin, 2, mEmmcPins[Index].Pull);
+    PioSetField (CUBIE_A7A_PIO_DRV0 (CUBIE_A7A_PIO_BANK_C), Pin, 4, mEmmcPins[Index].Drive);
+    PioSetField (CUBIE_A7A_PIO_CFG0 (CUBIE_A7A_PIO_BANK_C), Pin, 4, EMMC_PIN_FUNCTION);
+  }
+}
+
 STATIC
 EFI_STATUS
 MmcUpdateClock (
@@ -373,8 +667,8 @@ MmcSetClock (
     return Status;
   }
 
-  MmioWrite32 (CUBIE_A7A_CCU_SMHC0_CLK, 0);
-  MmioWrite32 (CUBIE_A7A_CCU_SMHC0_CLK, ModuleClock);
+  MmioWrite32 (Priv->CcuClk, 0);
+  MmioWrite32 (Priv->CcuClk, ModuleClock);
   MmcWrite (Priv, SMHC_SAMP_DL, SMHC_SAMP_DL_CAL_SW_EN);
   if (Mode != NULL) {
     MmcWrite (Priv, SMHC_DRV_DL, Mode->DrvDl);
@@ -479,11 +773,15 @@ MmcAppCommand (
 
 /**
   Number of 512-byte blocks described by a CSD (Response[] in Linux order).
+  Mmc: an (e)MMC CSD, whose capacity fields are those of SD's CSD 1.0
+  whatever its CSD_STRUCTURE says (the eMMC path uses it only for
+  byte-addressed devices; sector-addressed ones report SEC_COUNT).
 **/
 STATIC
 UINT64
 MmcCsdBlocks (
-  IN CONST UINT32  *Csd
+  IN CONST UINT32  *Csd,
+  IN BOOLEAN       Mmc
   )
 {
   UINT32  Structure;
@@ -491,7 +789,7 @@ MmcCsdBlocks (
   UINT32  CSizeMult;
   UINT32  ReadBlLen;
 
-  Structure = Csd[0] >> 30;
+  Structure = Mmc ? 0 : Csd[0] >> 30;
   if (Structure == 1) {
     // CSD 2.0: C_SIZE = bits 69:48, capacity = (C_SIZE + 1) * 512 KiB.
     CSize = ((Csd[1] & 0x3F) << 16) | (Csd[2] >> 16);
@@ -505,14 +803,21 @@ MmcCsdBlocks (
   return (((UINT64)CSize + 1) << (CSizeMult + 2) << ReadBlLen) / MMC_BLOCK_SIZE;
 }
 
+STATIC
+EFI_STATUS
+EmmcIdentify (
+  IN SUNXI_MMC_PRIVATE  *Priv
+  );
+
 /**
   Bring the controller and the card up from cold, ending at the 12 MHz
   data clock. CMD0 also returns a card that was switched to High Speed to
-  default speed, so this is the fallback from every raised clock.
+  default speed (and an eMMC to the 1-bit bus), so this is the fallback
+  from every raised clock.
 **/
 STATIC
 EFI_STATUS
-MmcIdentify (
+MmcIdentifyOnce (
   IN SUNXI_MMC_PRIVATE  *Priv
   )
 {
@@ -522,17 +827,21 @@ MmcIdentify (
   UINT32      Ocr;
   BOOLEAN     SdV2;
 
-  MmcSetupPins ();
+  if (Priv->Emmc) {
+    EmmcSetupPins ();
+  } else {
+    MmcSetupPins ();
+  }
 
   //
   // Bus gate + reset cycle, then the module clock at identification speed.
   //
-  MmioAnd32 (CUBIE_A7A_CCU_SMHC_BGR, ~(UINT32)BIT0);
-  MmioAnd32 (CUBIE_A7A_CCU_SMHC_BGR, ~(UINT32)BIT16);
+  MmioAnd32 (Priv->CcuBgr, ~(UINT32)BIT0);
+  MmioAnd32 (Priv->CcuBgr, ~(UINT32)BIT16);
   MicroSecondDelay (10);
-  MmioOr32 (CUBIE_A7A_CCU_SMHC_BGR, BIT16);
-  MmioOr32 (CUBIE_A7A_CCU_SMHC_BGR, BIT0);
-  MmioWrite32 (CUBIE_A7A_CCU_SMHC0_CLK, MCLK_ID_MODE);
+  MmioOr32 (Priv->CcuBgr, BIT16);
+  MmioOr32 (Priv->CcuBgr, BIT0);
+  MmioWrite32 (Priv->CcuClk, MCLK_ID_MODE);
 
   //
   // Controller reset.
@@ -552,6 +861,14 @@ MmcIdentify (
   MmcWrite (Priv, SMHC_IMASK, 0);
   MmcWrite (Priv, SMHC_RINT, 0xFFFFFFFF);
   MmcWrite (Priv, SMHC_WIDTH, 0);             // 1-bit, always (PF4 = D3 is a GPIO)
+  Priv->BusWidth = 1;
+  if (Priv->Emmc) {
+    // RST_n released (its reset default; the module ignores RST_n unless
+    // RST_n_FUNCTION was set, which is never done here), and the eMMC 4.5+
+    // start-bit detection the SoC documentation asks for on eMMC.
+    MmcWrite (Priv, SMHC_HWRST, SMHC_HWRST_ACTIVE);
+    MmcWrite (Priv, SMHC_EDSD, SMHC_EDSD_HALF_START_BIT);
+  }
 
   Status = MmcSetClock (Priv, MCLK_ID_MODE, NULL);
   if (EFI_ERROR (Status)) {
@@ -568,6 +885,10 @@ MmcIdentify (
   }
 
   MicroSecondDelay (2000);
+
+  if (Priv->Emmc) {
+    return EmmcIdentify (Priv);
+  }
 
   //
   // CMD8: voltage check, 2.7-3.6 V, check pattern 0xAA. No answer = SD v1.
@@ -628,7 +949,7 @@ MmcIdentify (
     return Status;
   }
 
-  Priv->Media.LastBlock = MmcCsdBlocks (Resp) - 1;
+  Priv->Media.LastBlock = MmcCsdBlocks (Resp, FALSE) - 1;
 
   Status = MmcSendCommand (Priv, 7, Priv->Rca << 16, RSP_R1B, NULL);
   if (EFI_ERROR (Status)) {
@@ -656,6 +977,30 @@ MmcIdentify (
 
   Priv->Speed = MmcSpeedSafe;
   return EFI_SUCCESS;
+}
+
+/**
+  MmcIdentifyOnce, narrowing an eMMC's bus (8 -> 4 -> 1 bit) each time a
+  width fails its read-back check (EFI_CRC_ERROR). The microSD always
+  takes exactly one pass.
+**/
+STATIC
+EFI_STATUS
+MmcIdentify (
+  IN SUNXI_MMC_PRIVATE  *Priv
+  )
+{
+  EFI_STATUS  Status;
+
+  for ( ; ; ) {
+    Status = MmcIdentifyOnce (Priv);
+    if (!Priv->Emmc || (Status != EFI_CRC_ERROR) || (Priv->BusWidthCap == 1)) {
+      return Status;
+    }
+
+    Priv->BusWidthCap = (Priv->BusWidthCap == 8) ? 4 : 1;
+    DEBUG ((DEBUG_WARN, "SunxiMmc: eMMC: retrying on a %u-bit bus\n", Priv->BusWidthCap));
+  }
 }
 
 /**
@@ -1063,6 +1408,318 @@ MmcSwitchHighSpeed (
   return TRUE;
 }
 
+//
+// EXT_CSD bytes that must read back identical on a new bus width or clock:
+// read-only properties, as Linux's mmc_compare_ext_csds, plus the boot
+// partition size and the secure feature flags. BUS_WIDTH is write-only and
+// cannot be checked; HS_TIMING is checked separately.
+//
+STATIC CONST UINT16  mExtCsdStable[] = {
+  EXT_CSD_PARTITION_SUPPORT,
+  EXT_CSD_ERASED_MEM_CONT,
+  EXT_CSD_REV,
+  EXT_CSD_CARD_TYPE,
+  EXT_CSD_SEC_COUNT,
+  EXT_CSD_SEC_COUNT + 1,
+  EXT_CSD_SEC_COUNT + 2,
+  EXT_CSD_SEC_COUNT + 3,
+  EXT_CSD_S_A_TIMEOUT,
+  EXT_CSD_HC_WP_GRP_SIZE,
+  EXT_CSD_ERASE_TIMEOUT_MULT,
+  EXT_CSD_HC_ERASE_GRP_SIZE,
+  EXT_CSD_BOOT_SIZE_MULT,
+  EXT_CSD_SEC_FEATURE_SUPPORT,
+};
+
+/**
+  CMD6 (SWITCH, access mode "write byte") to one EXT_CSD byte, wait for the
+  device to release DAT0, then check with CMD13 that it took the switch
+  (no SWITCH_ERROR) and is back in the transfer state.
+
+  Only BUS_WIDTH and HS_TIMING are accepted. Both are cleared by CMD0, a
+  hardware reset and power-off, so nothing this driver does to an eMMC
+  outlives the boot. PARTITION_CONFIG, BOOT_WP, ERASE_GROUP_DEF, the
+  enhanced area and every other field are never written.
+**/
+STATIC
+EFI_STATUS
+EmmcSwitch (
+  IN SUNXI_MMC_PRIVATE  *Priv,
+  IN UINT8              Index,
+  IN UINT8              Value
+  )
+{
+  EFI_STATUS  Status;
+  UINT32      R1;
+
+  if ((Index != EXT_CSD_BUS_WIDTH) && (Index != EXT_CSD_HS_TIMING)) {
+    ASSERT (FALSE);
+    return EFI_ACCESS_DENIED;
+  }
+
+  R1     = 0;
+  Status = MmcSendCommand (Priv, 6, (3U << 24) | ((UINT32)Index << 16) | ((UINT32)Value << 8), RSP_R1B, &R1);
+  if (!EFI_ERROR (Status) && ((R1 & R1_ERROR_MASK) != 0)) {
+    Status = EFI_DEVICE_ERROR;
+  }
+
+  if (!EFI_ERROR (Status)) {
+    Status = MmcWaitNotBusy (Priv);
+  }
+
+  if (!EFI_ERROR (Status)) {
+    Status = MmcSendCommand (Priv, 13, Priv->Rca << 16, RSP_R1, &R1);
+  }
+
+  if (!EFI_ERROR (Status) &&
+      (((R1 & (R1_ERROR_MASK | R1_SWITCH_ERROR)) != 0) || (R1_STATE (R1) != R1_STATE_TRAN)))
+  {
+    Status = EFI_DEVICE_ERROR;
+  }
+
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_WARN, "SunxiMmc: eMMC SWITCH EXT_CSD[%u] = %u failed: %r (R1 0x%08x)\n", Index, Value, Status, R1));
+  }
+
+  return Status;
+}
+
+/**
+  Read EXT_CSD again on the current bus and clock and compare it with the
+  copy read on the 1-bit bus at 12 MHz: the stable fields must match and
+  HS_TIMING must hold HsTiming.
+**/
+STATIC
+EFI_STATUS
+EmmcCheckExtCsd (
+  IN SUNXI_MMC_PRIVATE  *Priv,
+  IN UINT8              HsTiming
+  )
+{
+  EFI_STATUS   Status;
+  CONST UINT8  *Bytes;
+  UINT32       Index;
+
+  Status = MmcDataXfer (Priv, 8, 0, MMC_BLOCK_SIZE, 1, Priv->Scratch, FALSE, FALSE);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  Bytes = (CONST UINT8 *)Priv->Scratch;
+  for (Index = 0; Index < ARRAY_SIZE (mExtCsdStable); Index++) {
+    if (Bytes[mExtCsdStable[Index]] != EXT_CSD (Priv, mExtCsdStable[Index])) {
+      DEBUG ((
+        DEBUG_WARN,
+        "SunxiMmc: eMMC EXT_CSD[%u] reads 0x%02x, was 0x%02x (%u-bit)\n",
+        mExtCsdStable[Index],
+        Bytes[mExtCsdStable[Index]],
+        EXT_CSD (Priv, mExtCsdStable[Index]),
+        Priv->BusWidth
+        ));
+      return EFI_CRC_ERROR;
+    }
+  }
+
+  if ((Bytes[EXT_CSD_HS_TIMING] & 0xF) != HsTiming) {
+    DEBUG ((DEBUG_WARN, "SunxiMmc: eMMC HS_TIMING reads 0x%02x, expected %u\n", Bytes[EXT_CSD_HS_TIMING], HsTiming));
+    return EFI_CRC_ERROR;
+  }
+
+  return EFI_SUCCESS;
+}
+
+/**
+  Switch the eMMC and the controller to the widest bus BusWidthCap allows
+  and keep it only if EXT_CSD reads back identical on it. EFI_CRC_ERROR
+  tells MmcIdentify to start over (CMD0 returns the device to 1 bit) with a
+  narrower bus.
+**/
+STATIC
+EFI_STATUS
+EmmcSelectBusWidth (
+  IN SUNXI_MMC_PRIVATE  *Priv
+  )
+{
+  EFI_STATUS  Status;
+  UINT32      Width;
+
+  Width = Priv->BusWidthCap;
+  if (Width == 1) {
+    return EFI_SUCCESS;
+  }
+
+  Status = EmmcSwitch (
+             Priv,
+             EXT_CSD_BUS_WIDTH,
+             (Width == 8) ? EXT_CSD_BUS_WIDTH_8 : EXT_CSD_BUS_WIDTH_4
+             );
+  if (!EFI_ERROR (Status)) {
+    MmcWrite (Priv, SMHC_WIDTH, (Width == 8) ? SMHC_WIDTH_8BIT : SMHC_WIDTH_4BIT);
+    Priv->BusWidth = Width;
+    Status         = EmmcCheckExtCsd (Priv, EXT_CSD (Priv, EXT_CSD_HS_TIMING) & 0xF);
+  }
+
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_WARN, "SunxiMmc: eMMC %u-bit bus failed: %r\n", Width, Status));
+    return EFI_CRC_ERROR;
+  }
+
+  return EFI_SUCCESS;
+}
+
+/**
+  eMMC identification, from CMD0 on (MmcIdentifyOnce sent it): CMD1 until
+  the device has powered up, CMD2, CMD3 (RCA assigned by the host), CMD9,
+  CMD7, then the 12 MHz data clock, EXT_CSD (CMD8) on the 1-bit bus and the
+  widest bus that reads it back identically.
+**/
+STATIC
+EFI_STATUS
+EmmcIdentify (
+  IN SUNXI_MMC_PRIVATE  *Priv
+  )
+{
+  EFI_STATUS  Status;
+  UINT32      Resp[4];
+  UINT32      Ocr;
+  UINT32      Waited;
+  UINT32      SpecVers;
+  UINT64      Blocks;
+
+  //
+  // CMD1 (R3, no CRC) until the device reports power-up done. An empty
+  // socket answers nothing: the first CMD1 ends in a response timeout
+  // after 64 card clocks, and the probe stops there.
+  //
+  Ocr = 0;
+  for (Waited = 0; Waited < EMMC_CMD1_TIMEOUT_MS; Waited++) {
+    Status = MmcSendCommand (Priv, 1, EMMC_OCR_ARG, RSP_R3, &Ocr);
+    if (EFI_ERROR (Status)) {
+      if (Waited == 0) {
+        return EFI_NO_MEDIA;
+      }
+
+      DEBUG ((DEBUG_ERROR, "SunxiMmc: eMMC CMD1 failed after %u ms: %r\n", Waited, Status));
+      return Status;
+    }
+
+    if ((Ocr & EMMC_OCR_BUSY) != 0) {
+      break;
+    }
+
+    MicroSecondDelay (1000);
+  }
+
+  if ((Ocr & EMMC_OCR_BUSY) == 0) {
+    DEBUG ((DEBUG_ERROR, "SunxiMmc: eMMC stayed busy, OCR=0x%08x\n", Ocr));
+    return EFI_TIMEOUT;
+  }
+
+  Priv->HighCapacity = (BOOLEAN)(EMMC_OCR_ACCESS (Ocr) == 2);
+
+  //
+  // CMD2 (CID) -> CMD3 (set RCA) -> CMD9 (CSD) -> CMD7 (select).
+  //
+  Status = MmcSendCommand (Priv, 2, 0, RSP_R2, Resp);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  Priv->Rca = EMMC_RCA;
+  Status    = MmcSendCommand (Priv, 3, Priv->Rca << 16, RSP_R1, Resp);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  Status = MmcSendCommand (Priv, 9, Priv->Rca << 16, RSP_R2, Resp);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  // SPEC_VERS (CSD bits 125:122): 4 and up have EXT_CSD.
+  SpecVers = (Resp[0] >> 26) & 0xF;
+  if (SpecVers < 4) {
+    DEBUG ((DEBUG_ERROR, "SunxiMmc: MMC spec version %u has no EXT_CSD; not supported\n", SpecVers));
+    return EFI_UNSUPPORTED;
+  }
+
+  Blocks = MmcCsdBlocks (Resp, TRUE);   // byte-addressed devices only
+
+  Status = MmcSendCommand (Priv, 7, Priv->Rca << 16, RSP_R1B, NULL);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  MmcWaitNotBusy (Priv);
+
+  if (!Priv->HighCapacity) {
+    Status = MmcSendCommand (Priv, 16, MMC_BLOCK_SIZE, RSP_R1, NULL);
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
+  }
+
+  Status = MmcSetClock (Priv, MCLK_DATA_MODE, NULL);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  Priv->Speed = MmcSpeedSafe;
+
+  //
+  // CMD8 is SEND_EXT_CSD on an eMMC (not SEND_IF_COND): one 512-byte block.
+  //
+  Status = MmcDataXfer (Priv, 8, 0, MMC_BLOCK_SIZE, 1, Priv->ExtCsd, FALSE, FALSE);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "SunxiMmc: eMMC EXT_CSD read failed: %r\n", Status));
+    return Status;
+  }
+
+  //
+  // CMD0 returns PARTITION_ACCESS to the user area. If it says otherwise,
+  // something is wrong; the fix would be a write to PARTITION_CONFIG,
+  // which this driver never does.
+  //
+  if ((EXT_CSD (Priv, EXT_CSD_PARTITION_CONFIG) & EXT_CSD_PART_ACCESS_MASK) != 0) {
+    DEBUG ((DEBUG_ERROR, "SunxiMmc: eMMC not on its user area (PARTITION_CONFIG 0x%02x); leaving it alone\n", EXT_CSD (Priv, EXT_CSD_PARTITION_CONFIG)));
+    return EFI_UNSUPPORTED;
+  }
+
+  if (Priv->HighCapacity) {
+    Blocks = (UINT64)EXT_CSD (Priv, EXT_CSD_SEC_COUNT) |
+             ((UINT64)EXT_CSD (Priv, EXT_CSD_SEC_COUNT + 1) << 8) |
+             ((UINT64)EXT_CSD (Priv, EXT_CSD_SEC_COUNT + 2) << 16) |
+             ((UINT64)EXT_CSD (Priv, EXT_CSD_SEC_COUNT + 3) << 24);
+  }
+
+  if (Blocks == 0) {
+    DEBUG ((DEBUG_ERROR, "SunxiMmc: eMMC reports no capacity\n"));
+    return EFI_DEVICE_ERROR;
+  }
+
+  Priv->Media.LastBlock = Blocks - 1;
+
+  return EmmcSelectBusWidth (Priv);
+}
+
+/**
+  Switch an eMMC to High Speed (HS_TIMING = 1) if it offers 52 MHz. TRUE
+  only if the device accepted the switch.
+**/
+STATIC
+BOOLEAN
+EmmcSwitchHighSpeed (
+  IN SUNXI_MMC_PRIVATE  *Priv
+  )
+{
+  if ((EXT_CSD (Priv, EXT_CSD_CARD_TYPE) & EXT_CSD_CARD_TYPE_HS52) == 0) {
+    DEBUG ((DEBUG_INFO, "SunxiMmc: eMMC has no 52 MHz High Speed (CARD_TYPE 0x%02x)\n", EXT_CSD (Priv, EXT_CSD_CARD_TYPE)));
+    return FALSE;
+  }
+
+  return !EFI_ERROR (EmmcSwitch (Priv, EXT_CSD_HS_TIMING, EXT_CSD_HS_TIMING_HS));
+}
+
 /**
   From the 12 MHz state MmcIdentify leaves, raise the clock as far as
   Priv->SpeedCap allows, keeping only a setting at which the reference
@@ -1104,11 +1761,13 @@ MmcRaiseSpeed (
   }
 
   for (Try = Priv->SpeedCap; Try > MmcSpeedSafe; Try--) {
-    if ((Try == MmcSpeedHigh) && !MmcSwitchHighSpeed (Priv)) {
+    if ((Try == MmcSpeedHigh) &&
+        !(Priv->Emmc ? EmmcSwitchHighSpeed (Priv) : MmcSwitchHighSpeed (Priv)))
+    {
       // The card may or may not have switched; start over in default speed.
       Status = EFI_UNSUPPORTED;
     } else {
-      Status = MmcSetClock (Priv, mSpeedModes[Try].ModuleClock, &mSpeedModes[Try]);
+      Status = MmcSetClock (Priv, Priv->Modes[Try].ModuleClock, &Priv->Modes[Try]);
       if (!EFI_ERROR (Status)) {
         Status = MmcReadBurst (Priv, 0, VERIFY_BLOCKS, Priv->Scratch);
       }
@@ -1116,8 +1775,19 @@ MmcRaiseSpeed (
       if (!EFI_ERROR (Status) &&
           (CompareMem (Priv->Scratch, Reference, VERIFY_BLOCKS * MMC_BLOCK_SIZE) != 0))
       {
-        DEBUG ((DEBUG_WARN, "SunxiMmc: LBA 0..%u differ at %a\n", VERIFY_BLOCKS - 1, mSpeedModes[Try].Name));
+        DEBUG ((DEBUG_WARN, "SunxiMmc: LBA 0..%u differ at %a\n", VERIFY_BLOCKS - 1, Priv->Modes[Try].Name));
         Status = EFI_CRC_ERROR;
+      }
+
+      //
+      // An eMMC's user area may be blank (all zeroes or all ones), which
+      // proves little about the data lines; EXT_CSD always has content.
+      //
+      if (!EFI_ERROR (Status) && Priv->Emmc) {
+        Status = EmmcCheckExtCsd (
+                   Priv,
+                   (Try == MmcSpeedHigh) ? EXT_CSD_HS_TIMING_HS : (EXT_CSD (Priv, EXT_CSD_HS_TIMING) & 0xF)
+                   );
       }
 
       if (!EFI_ERROR (Status)) {
@@ -1125,7 +1795,7 @@ MmcRaiseSpeed (
         break;
       }
 
-      DEBUG ((DEBUG_WARN, "SunxiMmc: %a failed (%r), falling back\n", mSpeedModes[Try].Name, Status));
+      DEBUG ((DEBUG_WARN, "SunxiMmc: %a failed (%r), falling back\n", Priv->Modes[Try].Name, Status));
     }
 
     Priv->SpeedCap = Try - 1;
@@ -1157,13 +1827,28 @@ MmcInitialize (
     return Status;
   }
 
+  if (Priv->Emmc) {
+    DEBUG ((
+      DEBUG_ERROR,
+      "SunxiMmc: eMMC (EXT_CSD rev %u), RCA 0x%04x, user area %lu MiB, %u-bit @ %a, %a; boot partitions 2 x %u KiB not published\n",
+      EXT_CSD (Priv, EXT_CSD_REV),
+      Priv->Rca,
+      (Priv->Media.LastBlock + 1) / 2048,
+      Priv->BusWidth,
+      Priv->Modes[Priv->Speed].Name,
+      Priv->Media.ReadOnly ? "read-only" : "writable",
+      EXT_CSD (Priv, EXT_CSD_BOOT_SIZE_MULT) * 128
+      ));
+    return EFI_SUCCESS;
+  }
+
   DEBUG ((
     DEBUG_ERROR,
     "SunxiMmc: SD%a card, RCA 0x%04x, %lu MiB, 1-bit @ %a (PF4/DAT3 GPIO high: %u)\n",
     Priv->HighCapacity ? "HC/XC" : "SC",
     Priv->Rca,
     (Priv->Media.LastBlock + 1) / 2048,
-    mSpeedModes[Priv->Speed].Name,
+    Priv->Modes[Priv->Speed].Name,
     (MmioRead32 (CUBIE_A7A_PIO_DAT (CUBIE_A7A_PIO_BANK_F)) >> SD_DAT3_PIN) & 1
     ));
   return EFI_SUCCESS;
@@ -1184,7 +1869,7 @@ MmcFallBackToSafe (
     return FALSE;
   }
 
-  DEBUG ((DEBUG_WARN, "SunxiMmc: transfer failed at %a (%r); continuing at 12 MHz\n", mSpeedModes[Priv->Speed].Name, Failure));
+  DEBUG ((DEBUG_WARN, "SunxiMmc: transfer failed at %a (%r); continuing at 12 MHz\n", Priv->Modes[Priv->Speed].Name, Failure));
   Priv->SpeedCap = MmcSpeedSafe;
   // CMD0 aborts whatever the card is programming; let it finish first.
   MmcWaitNotBusy (Priv);
@@ -1399,10 +2084,11 @@ SunxiMmcWriteBlocks (
 
   //
   // The GPT and the firmware gap (bt0, oreboot, this FD, the variable store)
-  // are never written through Block I/O, whatever PcdSdWriteEnable says.
+  // are never written through Block I/O, whatever PcdSdWriteEnable says
+  // (eMMC: PcdEmmcWriteProtectBelowLba and PcdEmmcWriteEnable).
   //
-  if (Lba < FixedPcdGet32 (PcdSdWriteProtectBelowLba)) {
-    DEBUG ((DEBUG_WARN, "SunxiMmc: refused write at LBA %lu (protected below %u)\n", (UINT64)Lba, FixedPcdGet32 (PcdSdWriteProtectBelowLba)));
+  if (Lba < Priv->WriteProtectBelowLba) {
+    DEBUG ((DEBUG_WARN, "SunxiMmc: refused write at LBA %lu (protected below %u)\n", (UINT64)Lba, Priv->WriteProtectBelowLba));
     return EFI_WRITE_PROTECTED;
   }
 
@@ -1710,15 +2396,41 @@ SunxiMmcReset (
   return ExtendedVerification ? MmcInitialize (Priv) : EFI_SUCCESS;
 }
 
+/**
+  Microseconds since Start, a GetPerformanceCounter () value.
+**/
+STATIC
+UINT64
+MmcElapsedUs (
+  IN UINT64  Start
+  )
+{
+  UINT64  Now;
+  UINT64  First;
+  UINT64  Last;
+
+  Now = GetPerformanceCounter ();
+  GetPerformanceCounterProperties (&First, &Last);
+  return DivU64x32 (GetTimeInNanoSecond ((Last >= First) ? Now - Start : Start - Now), 1000);
+}
+
+/**
+  Set up, identify and publish one controller instance: the microSD on
+  SMHC0 (Emmc = FALSE), exactly as before the eMMC support, or the eMMC
+  user area on SMHC2. Only the microSD instance may offer the
+  variable-store window. A failed eMMC probe puts the bank C pins and the
+  SMHC2 clock back as it found them.
+**/
+STATIC
 EFI_STATUS
-EFIAPI
-SunxiMmcDxeEntry (
-  IN EFI_HANDLE        ImageHandle,
-  IN EFI_SYSTEM_TABLE  *SystemTable
+MmcStart (
+  IN BOOLEAN  Emmc
   )
 {
   EFI_STATUS         Status;
   SUNXI_MMC_PRIVATE  *Priv;
+  EMMC_SAVED_STATE   Saved;
+  UINT64             Started;
 
   Priv = AllocateZeroPool (sizeof (SUNXI_MMC_PRIVATE));
   if (Priv == NULL) {
@@ -1726,8 +2438,10 @@ SunxiMmcDxeEntry (
   }
 
   Priv->Signature = SUNXI_MMC_SIGNATURE;
-  Priv->RegBase   = CUBIE_A7A_SMHC0_BASE;
+  Priv->Emmc      = Emmc;
+  Priv->Modes     = Emmc ? mEmmcSpeedModes : mSpeedModes;
   Priv->SpeedCap  = MmcSpeedHigh;
+  Priv->BusWidth  = 1;
   Priv->Scratch   = AllocatePool (MAX_BLOCKS_PER_XFER * MMC_BLOCK_SIZE);
   if (Priv->Scratch == NULL) {
     FreePool (Priv);
@@ -1735,17 +2449,37 @@ SunxiMmcDxeEntry (
   }
 
   Priv->Media.MediaId          = 0;
-  Priv->Media.RemovableMedia   = TRUE;
   Priv->Media.MediaPresent     = TRUE;
   Priv->Media.LogicalPartition = FALSE;
-  // microSD has no write-protect switch; writes are a build option until
-  // the write path has run on hardware (PcdSdWriteEnable), and never reach
-  // below PcdSdWriteProtectBelowLba. The variable-store window has its own
-  // protocol (MmcSetupVarStoreWindow).
-  Priv->Media.ReadOnly         = !FixedPcdGetBool (PcdSdWriteEnable);
   Priv->Media.WriteCaching     = FALSE;
   Priv->Media.BlockSize        = MMC_BLOCK_SIZE;
   Priv->Media.IoAlign          = 4;
+
+  if (Emmc) {
+    Priv->Name                 = "eMMC";
+    Priv->RegBase              = CUBIE_A7A_SMHC2_BASE;
+    Priv->CcuClk               = CUBIE_A7A_CCU_SMHC2_CLK;
+    Priv->CcuBgr               = CUBIE_A7A_CCU_SMHC2_BGR;
+    Priv->BusWidthCap          = 8;
+    Priv->Media.RemovableMedia = FALSE;
+    // Read-only unless the build says otherwise (PcdEmmcWriteEnable), and
+    // never below PcdEmmcWriteProtectBelowLba. No variable store here.
+    Priv->Media.ReadOnly       = !FixedPcdGetBool (PcdEmmcWriteEnable);
+    Priv->WriteProtectBelowLba = FixedPcdGet32 (PcdEmmcWriteProtectBelowLba);
+  } else {
+    Priv->Name                 = "SD";
+    Priv->RegBase              = CUBIE_A7A_SMHC0_BASE;
+    Priv->CcuClk               = CUBIE_A7A_CCU_SMHC0_CLK;
+    Priv->CcuBgr               = CUBIE_A7A_CCU_SMHC_BGR;
+    Priv->BusWidthCap          = 1;
+    Priv->Media.RemovableMedia = TRUE;
+    // microSD has no write-protect switch; writes are a build option until
+    // the write path has run on hardware (PcdSdWriteEnable), and never reach
+    // below PcdSdWriteProtectBelowLba. The variable-store window has its own
+    // protocol (MmcSetupVarStoreWindow).
+    Priv->Media.ReadOnly       = !FixedPcdGetBool (PcdSdWriteEnable);
+    Priv->WriteProtectBelowLba = FixedPcdGet32 (PcdSdWriteProtectBelowLba);
+  }
 
   Priv->BlockIo.Revision    = EFI_BLOCK_IO_PROTOCOL_REVISION;
   Priv->BlockIo.Media       = &Priv->Media;
@@ -1754,9 +2488,33 @@ SunxiMmcDxeEntry (
   Priv->BlockIo.WriteBlocks = SunxiMmcWriteBlocks;
   Priv->BlockIo.FlushBlocks = SunxiMmcFlushBlocks;
 
+  Started = 0;
+  if (Emmc) {
+    EmmcSaveState (&Saved);
+    Started = GetPerformanceCounter ();
+  }
+
   Status = MmcInitialize (Priv);
+
+  if (Emmc) {
+    DEBUG ((
+      DEBUG_WARN,
+      "SunxiMmc: eMMC probe on SMHC2: %r after %lu us (bank C power mode %u, detected %u)\n",
+      Status,
+      MmcElapsedUs (Started),
+      (MmioRead32 (CUBIE_A7A_PIO_POW_MOD_SEL) >> 4) & 0x3,
+      (MmioRead32 (CUBIE_A7A_PIO_POW_VAL) >> 4) & 0x3
+      ));
+    if (EFI_ERROR (Status)) {
+      EmmcRestoreState (&Saved);
+    }
+  }
+
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "SunxiMmc: SD init failed: %r\n", Status));
+    if (!(Emmc && (Status == EFI_NO_MEDIA))) {
+      DEBUG ((DEBUG_ERROR, "SunxiMmc: %a init failed: %r\n", Priv->Name, Status));
+    }
+
     FreePool (Priv->Scratch);
     FreePool (Priv);
     return Status;
@@ -1765,19 +2523,23 @@ SunxiMmcDxeEntry (
   Status = gBS->InstallMultipleProtocolInterfaces (
                   &Priv->Handle,
                   &gEfiDevicePathProtocolGuid,
-                  &mSunxiMmcDevicePath,
+                  Emmc ? (VOID *)&mSunxiEmmcDevicePath : (VOID *)&mSunxiMmcDevicePath,
                   &gEfiBlockIoProtocolGuid,
                   &Priv->BlockIo,
                   NULL
                   );
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "SunxiMmc: InstallMultipleProtocolInterfaces: %r\n", Status));
+    if (Emmc) {
+      EmmcRestoreState (&Saved);
+    }
+
     FreePool (Priv->Scratch);
     FreePool (Priv);
     return Status;
   }
 
-  if (MmcSetupVarStoreWindow (Priv)) {
+  if (!Emmc && MmcSetupVarStoreWindow (Priv)) {
     Status = gBS->InstallMultipleProtocolInterfaces (
                     &Priv->Handle,
                     &gCubieA7ASdVarStoreIoProtocolGuid,
@@ -1791,4 +2553,29 @@ SunxiMmcDxeEntry (
   }
 
   return EFI_SUCCESS;
+}
+
+/**
+  The microSD first, unchanged; then, if the build enables it, the eMMC.
+  The driver stays loaded if either published a Block I/O device, and
+  returns the microSD's status (as before) if neither did.
+**/
+EFI_STATUS
+EFIAPI
+SunxiMmcDxeEntry (
+  IN EFI_HANDLE        ImageHandle,
+  IN EFI_SYSTEM_TABLE  *SystemTable
+  )
+{
+  EFI_STATUS  Status;
+
+  Status = MmcStart (FALSE);
+
+  if (FixedPcdGetBool (PcdEmmcEnable)) {
+    if (!EFI_ERROR (MmcStart (TRUE))) {
+      return EFI_SUCCESS;
+    }
+  }
+
+  return Status;
 }
