@@ -9,12 +9,11 @@
   capacity of one particular card. In the oreboot chain there is no U-Boot, so
   this version owns the controller outright:
 
-    - re-asserts the PF0..PF3/PF5 pin mux and pull-ups and holds PF4
-      (DAT3) high as a GPIO output (board workaround, below),
+    - re-asserts the PF0..PF5 pin mux and pull-ups,
     - cycles the SMHC0 bus gate/reset and programs the module clock,
     - resets the controller and selects the new timing mode,
-    - runs the SD identification sequence (CMD0/8/ACMD41/2/3/9/7) and
-      stays on the 1-bit bus (no ACMD6),
+    - runs the full SD identification sequence (CMD0/8/ACMD41/2/3/9/7/ACMD6),
+      4-bit bus,
     - derives the capacity from the CSD and handles both byte-addressed
       (SDSC) and block-addressed (SDHC/SDXC) cards.
 
@@ -49,12 +48,9 @@
   reachable only through CUBIE_A7A_SD_VARSTORE_IO_PROTOCOL, which this
   driver installs only if no partition of the card overlaps the window.
 
-  Board workaround (2026-11-11): SDC0-D3 (PF4) leaks to ground on the A7A
-  under test. As an input with the internal pull-up it reads low with or
-  without a card; driven as an output high it reads back high. A card that
-  sees DAT3 low at CMD0 enters SPI mode and stops answering. PF4 is
-  therefore never muxed to SMHC0: it is driven high as a GPIO (data bit set
-  before the pin becomes an output) and the bus stays 1-bit (D0 only).
+  The earlier board workaround (PF4/DAT3 held high as a GPIO, 1-bit bus)
+  has been removed: the slot it was written for does not work with or
+  without it, and healthy slots ran 1-bit for nothing.
 
   eMMC (PcdEmmcEnable, 2026-11-12): the same code drives a second instance
   on SMHC2, the eMMC socket (bank C, 1.8 V, 8-bit). After the microSD
@@ -335,7 +331,7 @@ typedef struct {
   BOOLEAN                  HighCapacity;    // block (not byte) addressed
   MMC_SPEED                Speed;           // current setting
   MMC_SPEED                SpeedCap;        // fastest setting still allowed
-  UINT32                   BusWidth;        // 1, 4 or 8 (the microSD: always 1)
+  UINT32                   BusWidth;        // 1, 4 or 8 (the microSD: 4 after ACMD6)
   UINT32                   BusWidthCap;     // eMMC: widest width still allowed
   UINT32                   *Scratch;        // MAX_BLOCKS_PER_XFER blocks: verify buffer
   UINT32                   ExtCsd[MMC_BLOCK_SIZE / sizeof (UINT32)];  // eMMC: as read on the 1-bit bus
@@ -434,18 +430,10 @@ MmcWrite (
   MmioWrite32 (Priv->RegBase + Offset, Value);
 }
 
-//
-// PF4 = SDC0-D3: held high as a GPIO output, never muxed to SMHC0.
-//
-#define SD_DAT3_PIN  4
-
 /**
-  Mux PF0..PF3 and PF5 to SMHC0 (function 2) and enable pull-ups on CMD,
-  D0..D2 and D3. PF4 (D3) is driven high as a GPIO output instead (board
-  workaround, see the file header): its data bit is set before the pin is
-  switched to output (function 1), so it never drives low. oreboot bt0 has
-  already done this to load us; doing it again keeps the driver independent
-  of what ran before it.
+  Mux PF0..PF5 to SMHC0 (function 2) and enable pull-ups on CMD and D0..D3.
+  oreboot bt0 has already done this to load us; doing it again keeps the
+  driver independent of what ran before it.
 **/
 STATIC
 VOID
@@ -455,24 +443,16 @@ MmcSetupPins (
 {
   UINTN   Cfg0;
   UINTN   Pul0;
-  UINTN   Dat;
   UINT32  Pin;
 
   Cfg0 = CUBIE_A7A_PIO_CFG0 (CUBIE_A7A_PIO_BANK_F);
   Pul0 = CUBIE_A7A_PIO_PUL0 (CUBIE_A7A_PIO_BANK_F);
-  Dat  = CUBIE_A7A_PIO_DAT (CUBIE_A7A_PIO_BANK_F);
 
   for (Pin = 0; Pin <= 5; Pin++) {
+    MmioAndThenOr32 (Cfg0, ~(0xFU << (Pin * 4)), 2U << (Pin * 4));
     if (Pin != 2) {
       // PF2 is CLK; everything else gets a pull-up (1 = pull-up).
       MmioAndThenOr32 (Pul0, ~(0x3U << (Pin * 2)), 1U << (Pin * 2));
-    }
-
-    if (Pin == SD_DAT3_PIN) {
-      MmioOr32 (Dat, 1U << Pin);
-      MmioAndThenOr32 (Cfg0, ~(0xFU << (Pin * 4)), 1U << (Pin * 4));
-    } else {
-      MmioAndThenOr32 (Cfg0, ~(0xFU << (Pin * 4)), 2U << (Pin * 4));
     }
   }
 }
@@ -860,7 +840,7 @@ MmcIdentifyOnce (
   MmcWrite (Priv, SMHC_TMOUT, 0xFFFFFF40);    // max data timeout, 0x40 response timeout
   MmcWrite (Priv, SMHC_IMASK, 0);
   MmcWrite (Priv, SMHC_RINT, 0xFFFFFFFF);
-  MmcWrite (Priv, SMHC_WIDTH, 0);             // 1-bit, always (PF4 = D3 is a GPIO)
+  MmcWrite (Priv, SMHC_WIDTH, 0);             // 1-bit until ACMD6 (SD) or the eMMC width switch
   Priv->BusWidth = 1;
   if (Priv->Emmc) {
     // RST_n released (its reset default; the module ignores RST_n unless
@@ -959,9 +939,15 @@ MmcIdentifyOnce (
   MmcWaitNotBusy (Priv);
 
   //
-  // No ACMD6: the card and the controller stay on the power-on 1-bit bus,
-  // since D3 (PF4) is not connected to the controller.
+  // ACMD6: 4-bit bus.
   //
+  Status = MmcAppCommand (Priv, 6, 2, RSP_R1, NULL);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  MmcWrite (Priv, SMHC_WIDTH, SMHC_WIDTH_4BIT);
+  Priv->BusWidth = 4;
 
   if (!Priv->HighCapacity) {
     Status = MmcSendCommand (Priv, 16, MMC_BLOCK_SIZE, RSP_R1, NULL);
@@ -1844,12 +1830,12 @@ MmcInitialize (
 
   DEBUG ((
     DEBUG_ERROR,
-    "SunxiMmc: SD%a card, RCA 0x%04x, %lu MiB, 1-bit @ %a (PF4/DAT3 GPIO high: %u)\n",
+    "SunxiMmc: SD%a card, RCA 0x%04x, %lu MiB, %u-bit @ %a\n",
     Priv->HighCapacity ? "HC/XC" : "SC",
     Priv->Rca,
     (Priv->Media.LastBlock + 1) / 2048,
-    Priv->Modes[Priv->Speed].Name,
-    (MmioRead32 (CUBIE_A7A_PIO_DAT (CUBIE_A7A_PIO_BANK_F)) >> SD_DAT3_PIN) & 1
+    Priv->BusWidth,
+    Priv->Modes[Priv->Speed].Name
     ));
   return EFI_SUCCESS;
 }
