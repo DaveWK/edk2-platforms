@@ -77,6 +77,16 @@
   gOreEdk2BootTokenSpaceGuid.PcdDwPcieLinkStatusMask|0x3|UINT32|0x00000053
 
   #
+  # Boot order (PlatformBootManagerLib). TRUE: after the boot options are
+  # registered, BootOrder is reordered (stable) so that every option whose
+  # device path has an eMMC node comes first, then every option with an SD
+  # node, then every option with a USB node, then the rest, each group in
+  # its previous order. FALSE (default): BootOrder as the boot manager
+  # built it.
+  #
+  gOreEdk2BootTokenSpaceGuid.PcdBootOrderEmmcSdUsb|FALSE|BOOLEAN|0x00000060
+
+  #
   # SMBIOS (BoardSmbiosDxe): numbers.
   #
   gOreEdk2BootTokenSpaceGuid.PcdSmbiosProcessorCoreCount|1|UINT8|0x00000010

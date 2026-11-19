@@ -37,11 +37,14 @@
 #include <Protocol/BlockIo.h>
 #include <Protocol/SimpleFileSystem.h>
 #include <Library/BaseLib.h>
+#include <Library/PrintLib.h>
 #include <Guid/SerialPortLibVendor.h>
 #include <Guid/GlobalVariable.h>
 #include <Guid/EventGroup.h>
 
 #include "ConfirmBoot.h"
+
+#include "BootOrderPolicy.h"
 
 #pragma pack(1)
 typedef struct {
@@ -391,6 +394,83 @@ RegisterEspBootOptions (
   FreePool (Handles);
 }
 
+/**
+  PcdBootOrderEmmcSdUsb: reorder BootOrder so that the options on an eMMC
+  come first, then those on SD, then USB, then the rest, each group in the order the
+  boot manager built (BootOrderPolicy.c). A Boot#### that cannot be read
+  keeps its place among the rest. Nothing is written if the order is
+  already right.
+**/
+STATIC
+VOID
+ApplyBootOrderPolicy (
+  VOID
+  )
+{
+  EFI_STATUS                    Status;
+  UINT16                        *Order;
+  UINTN                         Size;
+  UINTN                         Count;
+  UINTN                         Index;
+  UINT8                         *Rank;
+  UINT16                        *Scratch;
+  CHAR16                        Name[sizeof ("Boot####")];
+  EFI_BOOT_MANAGER_LOAD_OPTION  Option;
+
+  Order = NULL;
+  Size  = 0;
+  Status = GetEfiGlobalVariable2 (L"BootOrder", (VOID **)&Order, &Size);
+  if (EFI_ERROR (Status) || (Order == NULL) || (Size < sizeof (UINT16))) {
+    DEBUG ((DEBUG_ERROR, "PlatformBds: no BootOrder to sort (%r)\n", Status));
+    if (Order != NULL) {
+      FreePool (Order);
+    }
+
+    return;
+  }
+
+  Count   = Size / sizeof (UINT16);
+  Rank    = AllocateZeroPool (Count);
+  Scratch = AllocateZeroPool (Count * sizeof (UINT16));
+  if ((Rank == NULL) || (Scratch == NULL)) {
+    goto Done;
+  }
+
+  for (Index = 0; Index < Count; Index++) {
+    Rank[Index] = BOOT_ORDER_RANK_OTHER;
+    UnicodeSPrint (Name, sizeof (Name), L"Boot%04x", Order[Index]);
+    Status = EfiBootManagerVariableToLoadOption (Name, &Option);
+    if (!EFI_ERROR (Status)) {
+      Rank[Index] = BootOrderPolicyRank (Option.FilePath, 64);
+      EfiBootManagerFreeLoadOption (&Option);
+    }
+  }
+
+  if (BootOrderPolicySort (Order, Rank, Count, Scratch)) {
+    Status = gRT->SetVariable (
+                    L"BootOrder",
+                    &gEfiGlobalVariableGuid,
+                    EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS | EFI_VARIABLE_NON_VOLATILE,
+                    Count * sizeof (UINT16),
+                    Order
+                    );
+    DEBUG ((DEBUG_ERROR, "PlatformBds: BootOrder sorted eMMC, SD, USB, rest: %r\n", Status));
+  } else {
+    DEBUG ((DEBUG_ERROR, "PlatformBds: BootOrder already eMMC, SD, USB, rest\n"));
+  }
+
+Done:
+  if (Rank != NULL) {
+    FreePool (Rank);
+  }
+
+  if (Scratch != NULL) {
+    FreePool (Scratch);
+  }
+
+  FreePool (Order);
+}
+
 STATIC
 VOID
 DumpBootOptions (
@@ -612,6 +692,10 @@ PlatformBootManagerAfterConsole (
                            { 0x83, 0x6E, 0x8A, 0xB6, 0xF4, 0x66, 0x23, 0x31 } };
     RegisterFvBootOption (&UiAppGuid, L"Enter Setup",        LOAD_OPTION_ACTIVE | LOAD_OPTION_HIDDEN, (UINTN)-1);
     RegisterFvBootOption (&ShellGuid, L"UEFI Shell", LOAD_OPTION_ACTIVE, (UINTN)-1);
+  }
+
+  if (FixedPcdGetBool (PcdBootOrderEmmcSdUsb)) {
+    ApplyBootOrderPolicy ();
   }
 
   //
